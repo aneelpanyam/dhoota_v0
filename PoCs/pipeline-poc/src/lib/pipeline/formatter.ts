@@ -7,7 +7,7 @@ import type { SqlResult, FormattedResponse } from "@/types/pipeline";
  */
 const SPECIALIZED_FORMATTERS: Record<
   string,
-  (sqlResults: SqlResult[], option: OptionDefinition) => FormattedResponse
+  (sqlResults: SqlResult[], option: OptionDefinition, params?: Record<string, unknown>) => FormattedResponse
 > = {
   "activity.list": formatActivityList,
   "activity.view": formatActivityView,
@@ -20,12 +20,18 @@ const SPECIALIZED_FORMATTERS: Record<
   "tag.manage": formatTagList,
   "tag.create": formatTagCreate,
   "bookmark.list": formatBookmarkList,
+  "analysis.activities": formatAnalysisActivityList,
+  "analysis.specific_activity": formatAnalysisActivityList,
+  "analysis.tags": formatAnalysisTags,
+  "analysis.timeline": formatAnalysisTimeline,
+  "analysis.notes": formatAnalysisNotes,
 };
 
 export async function formatResponse(
   option: OptionDefinition | null,
   sqlResults: SqlResult[],
-  _context: unknown
+  _context: unknown,
+  params?: Record<string, unknown>
 ): Promise<FormattedResponse> {
   if (!option) {
     return {
@@ -41,10 +47,10 @@ export async function formatResponse(
 
   const specializedFn = SPECIALIZED_FORMATTERS[option.id];
   if (specializedFn) {
-    return specializedFn(sqlResults, option);
+    return specializedFn(sqlResults, option, params);
   }
 
-  return formatGenericResults(sqlResults, option);
+  return formatGenericResults(sqlResults, option, params);
 }
 
 // ────────────────────────────────────────────
@@ -136,7 +142,8 @@ export function deriveItemActions(
 
 function formatGenericResults(
   sqlResults: SqlResult[],
-  option: OptionDefinition
+  option: OptionDefinition,
+  params?: Record<string, unknown>
 ): FormattedResponse {
   const widgets: FormattedResponse["widgets"] = [];
   let hasWrite = false;
@@ -263,14 +270,17 @@ function formatGenericResults(
       const columns = pickDisplayColumns(firstRow);
       if (columns.length > 0) {
         const itemActions = deriveItemActions(option.follow_up_option_ids ?? []);
+        const currentPage = Number(params?.page ?? 1);
+        const currentPageSize = Number(params?.pageSize ?? 10);
         widgets.push({
           type: "data_list",
           data: {
             items: result.rows,
             columns,
             totalItems: result.rows.length,
-            page: 1,
-            pageSize: Math.max(result.rows.length, 10),
+            page: currentPage,
+            pageSize: currentPageSize,
+            paginationOptionId: option.id,
             ...itemActions,
           },
         });
@@ -331,10 +341,18 @@ function formatGenericResults(
 
 function formatActivityList(
   sqlResults: SqlResult[],
-  option: OptionDefinition
+  option: OptionDefinition,
+  params?: Record<string, unknown>
 ): FormattedResponse {
   const listResult = sqlResults.find((r) => r.templateName === "list_activities");
+  const countResult = sqlResults.find((r) => r.templateName === "count_activities");
   const rows = listResult?.rows ?? [];
+
+  const currentPage = Number(params?.page ?? 1);
+  const currentPageSize = Number(params?.pageSize ?? 10);
+  const totalItems = countResult?.rows[0]?.total_count != null
+    ? Number(countResult.rows[0].total_count)
+    : rows.length;
 
   const items = rows.map((row) => {
     const summary = row.ai_summary as Record<string, unknown> | null;
@@ -360,17 +378,24 @@ function formatActivityList(
       data: {
         items,
         columns,
-        totalItems: items.length,
-        page: 1,
-        pageSize: 10,
+        totalItems,
+        page: currentPage,
+        pageSize: currentPageSize,
+        paginationOptionId: option.id,
       },
     });
   }
 
-  const count = items.length;
-  const summary = count === 0
-    ? "You don't have any activities yet. Let's add one!"
-    : `Here are your ${count} recent activit${count === 1 ? "y" : "ies"}.`;
+  let summary: string;
+  if (totalItems === 0) {
+    summary = "You don't have any activities yet. Let's add one!";
+  } else if (totalItems > currentPageSize) {
+    const start = (currentPage - 1) * currentPageSize + 1;
+    const end = Math.min(currentPage * currentPageSize, totalItems);
+    summary = `Showing ${start}–${end} of ${totalItems} activit${totalItems === 1 ? "y" : "ies"}.`;
+  } else {
+    summary = `Here are your ${totalItems} activit${totalItems === 1 ? "y" : "ies"}.`;
+  }
 
   return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
 }
@@ -623,6 +648,287 @@ function formatTagCreate(
     widgets: [{
       type: "text_response",
       data: { text: `Tag **${tag.name}** has been created. You can now use it when adding or editing activities.` },
+    }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+// ────────────────────────────────────────────
+// Analysis formatters
+// ────────────────────────────────────────────
+
+function formatAnalysisActivityList(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const rows = sqlResults.flatMap((r) => r.rows);
+
+  if (rows.length === 0) {
+    const noun = option.id === "analysis.specific_activity" ? "matching activities" : "activities";
+    return {
+      summary: `No ${noun} found. Try adjusting your filters.`,
+      widgets: [{ type: "text_response", data: { text: `No ${noun} found with the given criteria.` } }],
+      followUpOptionIds: option.follow_up_option_ids.filter((id) => /\.create$/.test(id)),
+    };
+  }
+
+  const items = rows.map((row) => {
+    const aiSummary = row.ai_summary as Record<string, unknown> | null;
+    return {
+      ...row,
+      title: aiSummary?.enhancedTitle ?? row.title,
+      description: aiSummary?.enhancedDescription ?? row.description,
+    };
+  });
+
+  const columns = [
+    { key: "title", label: "Title" },
+    { key: "activity_date", label: "Date" },
+    { key: "status", label: "Status" },
+    { key: "tags", label: "Tags" },
+  ];
+
+  const count = items.length;
+  const summary = option.id === "analysis.specific_activity"
+    ? `Found ${count} matching activit${count === 1 ? "y" : "ies"}.`
+    : `Found ${count} activit${count === 1 ? "y" : "ies"}.`;
+
+  return {
+    summary,
+    widgets: [{
+      type: "data_list",
+      data: {
+        items,
+        columns,
+        totalItems: count,
+        page: 1,
+        pageSize: 10,
+      },
+    }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatAnalysisTags(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const rows = sqlResults.flatMap((r) => r.rows);
+
+  if (rows.length === 0) {
+    return {
+      summary: "No tags found.",
+      widgets: [{ type: "text_response", data: { text: "No tags found. Create tags to organize your activities." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+
+  const items = rows.map((tag) => ({
+    id: tag.id,
+    name: tag.name,
+    color: tag.color ?? "#888",
+    source: tag.source,
+    activity_count: (tag.activity_count as number) ?? 0,
+  }));
+
+  const totalActivities = items.reduce((sum, t) => sum + t.activity_count, 0);
+  const systemCount = items.filter((t) => t.source === "system").length;
+  const customCount = items.length - systemCount;
+  const topTag = items[0];
+
+  const widgets: FormattedResponse["widgets"] = [];
+
+  widgets.push({
+    type: "stats_card",
+    data: { label: "Total Tags", value: String(items.length), trend: "flat" },
+  });
+  if (topTag && topTag.activity_count > 0) {
+    widgets.push({
+      type: "stats_card",
+      data: { label: "Most Used", value: topTag.name, trend: "flat" },
+    });
+  }
+  widgets.push({
+    type: "stats_card",
+    data: { label: "Tagged Activities", value: String(totalActivities), trend: "flat" },
+  });
+
+  const chartItems = items.filter((t) => t.activity_count > 0).slice(0, 15);
+  if (chartItems.length > 0) {
+    widgets.push({
+      type: "chart",
+      data: {
+        chartType: "bar",
+        title: "Tag Usage",
+        labels: chartItems.map((t) => t.name),
+        datasets: [{
+          label: "Activities",
+          data: chartItems.map((t) => t.activity_count),
+        }],
+      },
+    });
+  }
+
+  widgets.push({
+    type: "data_list",
+    data: {
+      items,
+      columns: [
+        { key: "name", label: "Tag" },
+        { key: "source", label: "Type" },
+        { key: "activity_count", label: "Activities" },
+      ],
+      totalItems: items.length,
+      page: 1,
+      pageSize: 50,
+    },
+  });
+
+  let summary = `${items.length} tag${items.length !== 1 ? "s" : ""}`;
+  if (systemCount > 0 && customCount > 0) {
+    summary += ` (${systemCount} system, ${customCount} custom)`;
+  }
+  summary += ` across ${totalActivities} tagged activit${totalActivities !== 1 ? "ies" : "y"}.`;
+
+  return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
+}
+
+function formatAnalysisTimeline(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const rows = sqlResults.flatMap((r) => r.rows);
+
+  if (rows.length === 0) {
+    return {
+      summary: "No timeline data found for the given period.",
+      widgets: [{ type: "text_response", data: { text: "No activities found in the selected time range." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+
+  const sorted = [...rows].sort((a, b) =>
+    String(a.period ?? "").localeCompare(String(b.period ?? ""))
+  );
+
+  const totalActivities = sorted.reduce((sum, r) => sum + (Number(r.activity_count) || 0), 0);
+  const totalCompleted = sorted.reduce((sum, r) => sum + (Number(r.completed_count) || 0), 0);
+  const completionRate = totalActivities > 0
+    ? Math.round((totalCompleted / totalActivities) * 100)
+    : 0;
+  const peakPeriod = sorted.reduce(
+    (best, r) => (Number(r.activity_count) || 0) > (best.count) ? { period: r.period, count: Number(r.activity_count) || 0 } : best,
+    { period: null as unknown, count: 0 }
+  );
+
+  const widgets: FormattedResponse["widgets"] = [];
+
+  widgets.push({
+    type: "stats_card",
+    data: { label: "Total Activities", value: String(totalActivities), trend: "flat" },
+  });
+  widgets.push({
+    type: "stats_card",
+    data: { label: "Completed", value: String(totalCompleted), trend: "flat" },
+  });
+  widgets.push({
+    type: "stats_card",
+    data: { label: "Completion Rate", value: `${completionRate}%`, trend: "flat" },
+  });
+  if (peakPeriod.period) {
+    const peakLabel = formatPeriodLabel(peakPeriod.period as string);
+    widgets.push({
+      type: "stats_card",
+      data: { label: "Peak Period", value: `${peakLabel} (${peakPeriod.count})`, trend: "flat" },
+    });
+  }
+
+  const labels = sorted.map((r) => formatPeriodLabel(String(r.period ?? "")));
+
+  widgets.push({
+    type: "chart",
+    data: {
+      chartType: "bar",
+      title: "Activity Timeline",
+      labels,
+      datasets: [
+        {
+          label: "Completed",
+          data: sorted.map((r) => Number(r.completed_count) || 0),
+        },
+        {
+          label: "In Progress",
+          data: sorted.map((r) => Number(r.in_progress_count) || 0),
+        },
+        {
+          label: "Planned",
+          data: sorted.map((r) => Number(r.planned_count) || 0),
+        },
+      ],
+    },
+  });
+
+  const summary = `${totalActivities} activit${totalActivities !== 1 ? "ies" : "y"} across ${sorted.length} period${sorted.length !== 1 ? "s" : ""}, ${completionRate}% completion rate.`;
+
+  return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
+}
+
+function formatPeriodLabel(period: string): string {
+  if (!period) return "Unknown";
+  try {
+    const d = new Date(period);
+    if (isNaN(d.getTime())) return period;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return period;
+  }
+}
+
+function formatAnalysisNotes(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const rows = sqlResults.flatMap((r) => r.rows);
+
+  if (rows.length === 0) {
+    return {
+      summary: "No notes found.",
+      widgets: [{ type: "text_response", data: { text: "No notes match the given criteria." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+
+  const items = rows.map((note) => ({
+    id: note.id,
+    content: note.content,
+    created_at: note.created_at,
+    activity_title: note.activity_title,
+    activity_id: note.activity_id,
+    activity_status: note.activity_status,
+    activity_date: note.activity_date,
+    _is_note: true,
+  }));
+
+  const columns = [
+    { key: "content", label: "Note" },
+    { key: "activity_title", label: "Activity" },
+    { key: "created_at", label: "Date" },
+  ];
+
+  const count = items.length;
+  const summary = `Found ${count} note${count !== 1 ? "s" : ""}.`;
+
+  return {
+    summary,
+    widgets: [{
+      type: "data_list",
+      data: {
+        items,
+        columns,
+        totalItems: count,
+        page: 1,
+        pageSize: 20,
+      },
     }],
     followUpOptionIds: option.follow_up_option_ids,
   };

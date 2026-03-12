@@ -80,10 +80,12 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
   const viewParamKey = d.viewParamKey as string | undefined;
   const editOptionId = d.editOptionId as string | undefined;
   const editParamKey = d.editParamKey as string | undefined;
+  const paginationOptionId = d.paginationOptionId as string | undefined;
 
   const hasActivityFields = items.length > 0 && "activity_date" in items[0] && "title" in items[0];
   const hasTagFields = items.length > 0 && ("color" in items[0] && "source" in items[0]);
   const hasBookmarkFields = items.length > 0 && "_entity_type_raw" in items[0];
+  const hasNoteFields = items.length > 0 && "_is_note" in items[0] && "content" in items[0];
 
   if (items.length === 0) {
     return (
@@ -173,6 +175,13 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     }}
                     onCancel={() => setEditingItemId(null)}
                   />
+                ) : hasNoteFields ? (
+                  <NoteListItem
+                    item={item}
+                    onAction={onAction}
+                    onPinToContext={onPinToContext}
+                    columns={columns}
+                  />
                 ) : hasBookmarkFields ? (
                   <BookmarkListItem
                     item={item}
@@ -180,7 +189,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     onAction={onAction}
                   />
                 ) : hasTagFields ? (
-                  <TagListItem item={item} onPinToContext={onPinToContext} columns={columns} />
+                  <TagListItem item={item} onOptionSelect={onOptionSelect} onPinToContext={onPinToContext} columns={columns} />
                 ) : hasActivityFields ? (
                   <ActivityListItem
                     item={item}
@@ -213,13 +222,21 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
             {totalItems > pageSize ? (
               <>
                 <span>
-                  Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalItems)} of {totalItems}
+                  Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalItems)} of {totalItems}
                 </span>
                 <div className="flex gap-1">
-                  <button disabled={page <= 1} className="p-1 rounded hover:bg-muted disabled:opacity-30">
+                  <button
+                    disabled={page <= 1}
+                    onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page - 1, pageSize })}
+                    className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                  >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <button disabled={page * pageSize >= totalItems} className="p-1 rounded hover:bg-muted disabled:opacity-30">
+                  <button
+                    disabled={page * pageSize >= totalItems}
+                    onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page + 1, pageSize })}
+                    className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                  >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -381,10 +398,12 @@ function ActivityListItem({
 
 function TagListItem({
   item,
+  onOptionSelect,
   onPinToContext,
   columns,
 }: {
   item: Record<string, unknown>;
+  onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
   onPinToContext?: (item: ContextItem) => void;
   columns: { key: string; label: string }[];
 }) {
@@ -393,15 +412,22 @@ function TagListItem({
   const source = (item.source as string) ?? "system";
   const count = (item.activity_count as number) ?? 0;
 
+  const handleDrillDown = () => {
+    onOptionSelect?.("analysis.activities", { tag: name });
+  };
+
   return (
-    <div className="flex items-center gap-3">
+    <div
+      className={`flex items-center gap-3 ${onOptionSelect ? "cursor-pointer group" : ""}`}
+      onClick={onOptionSelect ? handleDrillDown : undefined}
+    >
       <span
         className="w-3 h-3 rounded-full shrink-0"
         style={{ backgroundColor: color }}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{name}</span>
+          <span className="font-medium text-sm group-hover:text-primary transition">{name}</span>
           {source !== "system" && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
               custom
@@ -409,8 +435,11 @@ function TagListItem({
           )}
         </div>
       </div>
-      <span className="text-xs text-muted-foreground shrink-0">
+      <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1.5">
         {count} activit{count === 1 ? "y" : "ies"}
+        {onOptionSelect && count > 0 && (
+          <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition" />
+        )}
       </span>
       {onPinToContext && (
         <button
@@ -421,6 +450,101 @@ function TagListItem({
           <Pin className="h-3.5 w-3.5" />
         </button>
       )}
+    </div>
+  );
+}
+
+function NoteListItem({
+  item,
+  onAction,
+  onPinToContext,
+  columns,
+}: {
+  item: Record<string, unknown>;
+  onAction: (action: WidgetAction) => void;
+  onPinToContext?: (item: ContextItem) => void;
+  columns: { key: string; label: string }[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const content = (item.content as string) ?? "";
+  const activityTitle = (item.activity_title as string) ?? "Activity";
+  const activityId = item.activity_id as string | undefined;
+  const activityStatus = item.activity_status as string | undefined;
+  const createdAt = item.created_at as string | undefined;
+
+  const isLong = content.length > 150;
+  const displayContent = expanded ? content : content.slice(0, 150);
+
+  const handleViewActivity = () => {
+    if (!activityId) return;
+    onAction({
+      label: "View Activity",
+      icon: "Eye",
+      optionId: "activity.view",
+      targetResourceId: activityId,
+      params: { activity_id: activityId },
+    });
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
+          <MessageSquare className="h-4 w-4 text-blue-500" />
+        </div>
+        <div className="flex-1 min-w-0 space-y-1">
+          <p className="text-sm leading-relaxed text-foreground">
+            {displayContent}
+            {isLong && !expanded && "..."}
+          </p>
+          {isLong && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+              className="text-[11px] text-primary/70 hover:text-primary transition"
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            {activityId && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleViewActivity(); }}
+                className="flex items-center gap-1 hover:text-primary transition"
+              >
+                <Eye className="h-3 w-3" />
+                <span className="truncate max-w-[180px]">{activityTitle}</span>
+                {activityStatus && (
+                  <span className={`text-[10px] px-1 py-0 rounded-full ml-0.5 ${statusColors[activityStatus] ?? "bg-gray-100"}`}>
+                    {activityStatus.replace("_", " ")}
+                  </span>
+                )}
+              </button>
+            )}
+            {createdAt && (
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {new Date(createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </span>
+            )}
+          </div>
+        </div>
+        {onPinToContext && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPinToContext(buildContextItem(
+                item,
+                columns,
+                activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined
+              ));
+            }}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition shrink-0"
+            title="Pin to context for insights"
+          >
+            <Pin className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

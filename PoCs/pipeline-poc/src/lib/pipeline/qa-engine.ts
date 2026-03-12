@@ -5,9 +5,10 @@ import { getLLMProvider } from "@/lib/llm/factory";
 
 export async function startQASession(
   option: OptionDefinition,
-  knownParams: Record<string, unknown>
+  knownParams: Record<string, unknown>,
+  tenantId?: string
 ): Promise<QAResult> {
-  const questions = await loadOptionQuestions(option.id);
+  const questions = await loadOptionQuestions(option.id, tenantId);
   if (questions.length === 0) {
     return { status: "complete", collectedParams: knownParams };
   }
@@ -17,6 +18,14 @@ export async function startQASession(
   );
 
   if (remaining.length === 0) {
+    return { status: "complete", collectedParams: knownParams };
+  }
+
+  const hasPrefilledParams = Object.keys(knownParams).some(
+    (k) => knownParams[k] !== undefined && knownParams[k] !== null
+  );
+  const allRemainingOptional = remaining.every((q) => !q.is_required);
+  if (hasPrefilledParams && allRemainingOptional) {
     return { status: "complete", collectedParams: knownParams };
   }
 
@@ -44,7 +53,8 @@ export async function startQASession(
 export async function continueQASession(
   option: OptionDefinition,
   previousParams: Record<string, unknown>,
-  newAnswers: Record<string, unknown>
+  newAnswers: Record<string, unknown>,
+  tenantId?: string
 ): Promise<QAResult> {
   const merged = { ...previousParams, ...newAnswers };
 
@@ -52,7 +62,7 @@ export async function continueQASession(
     return { status: "complete", collectedParams: merged };
   }
 
-  const questions = await loadOptionQuestions(option.id);
+  const questions = await loadOptionQuestions(option.id, tenantId);
 
   const isAnswered = (key: string) =>
     key in merged && merged[key] !== undefined;

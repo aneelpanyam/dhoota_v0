@@ -19,6 +19,7 @@ export async function executeSqlTemplates(
   context: { tenantId: string; userId: string; scopedUserId?: string },
   userType?: string
 ): Promise<SqlResult[]> {
+  const paginatedParams = ensurePaginationDefaults(params);
   const templates = await loadSqlTemplates(optionId);
   if (templates.length === 0) {
     _sqlCallDebug = [];
@@ -43,7 +44,7 @@ export async function executeSqlTemplates(
   const db = createServiceSupabase();
 
   for (const vt of validationTemplates) {
-    const vtParams = mapParams(vt, params, context);
+    const vtParams = mapParams(vt, paginatedParams, context);
     const vtResult = await executeRawQuery(vt.sql, vtParams);
     debugEntries.push({ sql: vt.sql, params: vtParams, rowCount: vtResult.length });
 
@@ -53,7 +54,7 @@ export async function executeSqlTemplates(
 
     const validated = vtResult[0];
     if (validated.citizen_id) {
-      params.validated_citizen_id = validated.citizen_id as string;
+      paginatedParams.validated_citizen_id = validated.citizen_id as string;
     }
   }
 
@@ -62,7 +63,7 @@ export async function executeSqlTemplates(
       throw new Error("Hard deletes are not permitted. Use soft deletes instead.");
     }
 
-    const sqlParams = mapParams(template, params, context);
+    const sqlParams = mapParams(template, paginatedParams, context);
 
     const { data, error } = await db.rpc("exec_sql", {
       query_text: template.sql,
@@ -134,6 +135,16 @@ function mapParams(
   }
 
   return sqlParams;
+}
+
+function ensurePaginationDefaults(
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  const out = { ...params };
+  if (!("pageSize" in out) || out.pageSize == null) out.pageSize = 10;
+  if (!("page" in out) || out.page == null) out.page = 1;
+  out.offset = (Number(out.page) - 1) * Number(out.pageSize);
+  return out;
 }
 
 async function executeRawQuery(

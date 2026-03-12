@@ -26,7 +26,10 @@ export async function loadSqlTemplates(optionId: string): Promise<SqlTemplate[]>
   return data ?? [];
 }
 
-export async function loadOptionQuestions(optionId: string): Promise<OptionQuestion[]> {
+export async function loadOptionQuestions(
+  optionId: string,
+  tenantId?: string
+): Promise<OptionQuestion[]> {
   const db = createServiceSupabase();
   const { data, error } = await db
     .from("option_questions")
@@ -35,7 +38,46 @@ export async function loadOptionQuestions(optionId: string): Promise<OptionQuest
     .order("question_order", { ascending: true });
 
   if (error) throw error;
-  return data ?? [];
+  const questions = (data ?? []) as OptionQuestion[];
+
+  if (!tenantId || questions.length === 0) return questions;
+
+  const overrides = await loadTenantQuestionOverrides(tenantId, questions.map((q) => q.id));
+  if (overrides.length === 0) return questions;
+
+  const overrideMap = new Map(overrides.map((o) => [o.question_id, o]));
+
+  return questions.map((q) => {
+    const ov = overrideMap.get(q.id);
+    if (!ov) return q;
+    return {
+      ...q,
+      question_text: ov.question_text_override ?? q.question_text,
+      widget_config: ov.widget_config_override ?? q.widget_config,
+      is_required: ov.is_required_override ?? q.is_required,
+    };
+  });
+}
+
+interface TenantQuestionOverride {
+  question_id: string;
+  question_text_override: string | null;
+  widget_config_override: Record<string, unknown> | null;
+  is_required_override: boolean | null;
+}
+
+async function loadTenantQuestionOverrides(
+  tenantId: string,
+  questionIds: string[]
+): Promise<TenantQuestionOverride[]> {
+  const db = createServiceSupabase();
+  const { data } = await db
+    .from("tenant_question_overrides")
+    .select("question_id, question_text_override, widget_config_override, is_required_override")
+    .eq("tenant_id", tenantId)
+    .in("question_id", questionIds);
+
+  return (data ?? []) as TenantQuestionOverride[];
 }
 
 export async function loadUserTypeConfig(userType: string): Promise<UserTypeConfig | null> {

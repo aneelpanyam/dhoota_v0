@@ -46,7 +46,14 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const [dateValue, setDateValue] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [selectValue, setSelectValue] = useState("private");
+  const [selectValue, setSelectValue] = useState(() => {
+    const options = (((d.widgetConfig as Record<string, unknown>) ?? {}).options as string[]) ?? [];
+    const defaultVal = ((d.widgetConfig as Record<string, unknown>) ?? {}).default as string | undefined;
+    const required = (d.isRequired as boolean) ?? true;
+    if (defaultVal) return defaultVal;
+    if (!required) return "";
+    return options[0] ?? "private";
+  });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,8 +117,9 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       case "date_picker":
         answer = new Date(dateValue).toISOString();
         break;
+      case "select":
       case "visibility_select":
-        answer = selectValue;
+        answer = selectValue || null;
         break;
       case "file_upload": {
         const fileRefs: FileReference[] = pendingFiles
@@ -223,16 +231,19 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
               onChange={(e) => setDateValue(e.target.value)}
               className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
-          ) : inlineWidget === "visibility_select" ? (
+          ) : inlineWidget === "select" || inlineWidget === "visibility_select" ? (
             <select
               value={selectValue}
               onChange={(e) => setSelectValue(e.target.value)}
               className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              {((widgetConfig.options as string[]) ?? ["private", "team", "public"]).map(
+              {!isRequired && (
+                <option value="">{(widgetConfig.placeholder as string) ?? "Select..."}</option>
+              )}
+              {((widgetConfig.options as string[]) ?? []).map(
                 (opt) => (
                   <option key={opt} value={opt}>
-                    {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    {opt.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                   </option>
                 )
               )}

@@ -81,7 +81,7 @@ export async function processMessage(
     // Always attempt Q&A — catches optional questions even when all required params are already provided
     const qaResult = await trace.step(
       "qa_session_start",
-      () => startQASession(resolved.option!, resolved.extractedParams ?? {}),
+      () => startQASession(resolved.option!, resolved.extractedParams ?? {}, context.tenantId),
       { optionId: resolved.option.id }
     );
 
@@ -207,7 +207,7 @@ export async function processMessage(
 
     const formatted = await trace.step(
       "format_response",
-      () => formatResponse(resolved.option!, sqlResults, context),
+      () => formatResponse(resolved.option!, sqlResults, context, resolved.extractedParams),
       { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
     );
 
@@ -298,7 +298,7 @@ async function handleQAResponse(
   const previousParams = (request.params as Record<string, unknown>) ?? {};
   const qaResult = await trace.step(
     "qa_session_continue",
-    () => continueQASession(option, previousParams, newAnswers),
+    () => continueQASession(option, previousParams, newAnswers, context.tenantId),
     { optionId: option.id }
   );
 
@@ -346,7 +346,7 @@ async function handleQAResponse(
 
     const formatted = await trace.step(
       "format_response",
-      () => formatResponse(option, sqlResults, context),
+      () => formatResponse(option, sqlResults, context, collectedParams),
       { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
     );
 
@@ -526,7 +526,7 @@ async function handleConfirmation(
 
   const formatted = await trace.step(
     "format_response",
-    () => formatResponse(option, sqlResults, context),
+    () => formatResponse(option, sqlResults, context, params),
     { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
   );
 
