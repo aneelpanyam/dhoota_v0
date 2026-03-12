@@ -1,0 +1,165 @@
+"use client";
+
+import { useState } from "react";
+import type { ChatMessage } from "@/lib/hooks/use-chat";
+import type { WidgetAction } from "@/types/api";
+import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
+import { User, Bot, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
+
+interface MessageBubbleProps {
+  message: ChatMessage;
+  isLastMessage?: boolean;
+  onAction: (action: WidgetAction) => void;
+  onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
+  onConfirm: (optionId: string, params: Record<string, unknown>) => void;
+  onQAResponse: (
+    optionId: string,
+    params: Record<string, unknown>,
+    content?: string
+  ) => void;
+  onCancel: () => void;
+}
+
+export function MessageBubble({
+  message,
+  isLastMessage,
+  onAction,
+  onOptionSelect,
+  onConfirm,
+  onQAResponse,
+  onCancel,
+}: MessageBubbleProps) {
+  const [showCollapsed, setShowCollapsed] = useState(false);
+
+  if (message.role === "user") {
+    return (
+      <div className="flex items-start gap-3 justify-end">
+        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
+          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        </div>
+        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+          <User className="h-4 w-4 text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  const response = message.response;
+  if (!response) return null;
+
+  const collapsed = message.collapsedMessages;
+  const hasCollapsed = collapsed && collapsed.length > 0;
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+        <Bot className="h-4 w-4 text-secondary-foreground" />
+      </div>
+      <div className="flex-1 min-w-0 space-y-3">
+        {/* Collapsed conversation toggle */}
+        {hasCollapsed && (
+          <button
+            onClick={() => setShowCollapsed((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition px-2 py-1 rounded-md hover:bg-muted"
+          >
+            <MessageSquare className="h-3 w-3" />
+            {showCollapsed ? "Hide" : "Show"} conversation ({collapsed.length} message{collapsed.length !== 1 ? "s" : ""})
+            {showCollapsed ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+        )}
+
+        {/* Collapsed messages (expanded view) */}
+        {hasCollapsed && showCollapsed && (
+          <div className="border-l-2 border-muted pl-3 space-y-2 py-1">
+            {collapsed.map((cm) => (
+              <CollapsedMessage key={cm.id} message={cm} />
+            ))}
+          </div>
+        )}
+
+        {/* Main widgets */}
+        {response.widgets.map((widget) => (
+          <WidgetRenderer
+            key={widget.id}
+            widget={widget}
+            onAction={onAction}
+            onOptionSelect={onOptionSelect}
+            onConfirm={onConfirm}
+            onQAResponse={onQAResponse}
+            onCancel={onCancel}
+          />
+        ))}
+
+        {response.followUps.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {response.followUps.map((fu) => (
+              <button
+                key={fu.optionId}
+                onClick={() => onOptionSelect(fu.optionId, fu.params)}
+                className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
+              >
+                {fu.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isLastMessage &&
+          response.followUps.length === 0 &&
+          response.conversationState === "active" &&
+          response.defaultOptions.length > 0 &&
+          !response.widgets.some((w) => w.type === "default_options_menu") && (
+          <div className="flex flex-wrap gap-2 pt-2">
+            {response.defaultOptions.map((opt) => (
+              <button
+                key={opt.optionId}
+                onClick={() => onOptionSelect(opt.optionId, opt.params)}
+                className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
+              >
+                {opt.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsedMessage({ message }: { message: ChatMessage }) {
+  if (message.role === "user" && message.content) {
+    return (
+      <div className="flex items-start gap-2">
+        <User className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+        <p className="text-xs text-muted-foreground">{message.content}</p>
+      </div>
+    );
+  }
+
+  if (message.response) {
+    const textWidgets = message.response.widgets.filter((w) => w.type === "text_response");
+    const text = textWidgets.map((w) => (w.data.text as string) ?? "").filter(Boolean).join(" ");
+    if (text) {
+      return (
+        <div className="flex items-start gap-2">
+          <Bot className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+          <p className="text-xs text-muted-foreground line-clamp-2">{text}</p>
+        </div>
+      );
+    }
+
+    const otherTypes = message.response.widgets
+      .filter((w) => w.type !== "text_response")
+      .map((w) => w.type.replace(/_/g, " "));
+    if (otherTypes.length > 0) {
+      return (
+        <div className="flex items-start gap-2">
+          <Bot className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+          <p className="text-xs text-muted-foreground italic">[{otherTypes.join(", ")}]</p>
+        </div>
+      );
+    }
+  }
+
+  return null;
+}

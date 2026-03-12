@@ -1,0 +1,299 @@
+"use client";
+
+import { useState } from "react";
+import type { Widget, WidgetAction } from "@/types/api";
+import {
+  Calendar,
+  MapPin,
+  Tag,
+  Eye,
+  Pencil,
+  MessageSquare,
+  Trash2,
+  Image as ImageIcon,
+  Globe,
+  Lock,
+  Users,
+} from "lucide-react";
+import { EditActivityFormWidget } from "./EditActivityFormWidget";
+
+interface Props {
+  widget: Widget;
+  onAction: (action: WidgetAction) => void;
+  onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
+  onConfirm: (optionId: string, params: Record<string, unknown>) => void;
+  onQAResponse: (optionId: string, params: Record<string, unknown>, content?: string) => void;
+  onCancel: () => void;
+}
+
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  Eye, Pencil, MessageSquare, Trash2, Image: ImageIcon,
+};
+
+const visibilityIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  private: Lock,
+  team: Users,
+  public: Globe,
+};
+
+function resolveMediaUrl(item: Record<string, unknown>): string | null {
+  if (typeof item.url === "string" && item.url.startsWith("http")) return item.url;
+  const key = (item.s3_key ?? item.s3Key) as string | undefined;
+  if (key) return `/api/media/serve?key=${encodeURIComponent(key)}`;
+  return null;
+}
+
+function isImageMime(item: Record<string, unknown>): boolean {
+  const mime = (item.mimeType ?? item.mime_type ?? "") as string;
+  return mime.startsWith("image/");
+}
+
+export function ActivityCardWidget({ widget, onAction, onConfirm }: Props) {
+  const [isEditing, setIsEditing] = useState(false);
+  const d = widget.data;
+  const title = (d.title as string) ?? "Untitled Activity";
+  const description = d.description as string | null;
+  const status = d.status as string;
+  const visibility = d.visibility as string;
+  const activityDate = (d.activityDate ?? d.activity_date) as string | null;
+  const location = d.location as string | null;
+  const tags = (d.tags as { id: string; name: string; color: string | null }[]) ?? [];
+  const media = (d.media as Record<string, unknown>[]) ?? [];
+  const notes = (d.notes as Record<string, unknown>[]) ?? [];
+  const noteCount = (d.noteCount ?? d.note_count ?? notes.length) as number;
+  const mediaCount = (d.mediaCount ?? d.media_count ?? media.length) as number;
+
+  const statusColors: Record<string, string> = {
+    planned: "bg-blue-100 text-blue-700",
+    in_progress: "bg-yellow-100 text-yellow-700",
+    completed: "bg-green-100 text-green-700",
+    cancelled: "bg-gray-100 text-gray-500",
+  };
+
+  const VisIcon = visibilityIcons[visibility] ?? Globe;
+
+  if (isEditing) {
+    return (
+      <EditActivityFormWidget
+        activity={{
+          id: (d.id as string) ?? "",
+          title,
+          description,
+          activity_date: activityDate as string | null,
+          location,
+          status,
+          visibility,
+        }}
+        onSave={(optionId, params) => {
+          setIsEditing(false);
+          onConfirm(optionId, params);
+        }}
+        onCancel={() => setIsEditing(false)}
+      />
+    );
+  }
+
+  const imageMedia = media.filter((m) => isImageMime(m) && resolveMediaUrl(m));
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+      {/* Hero image / grid -- social media style */}
+      {imageMedia.length > 0 && <MediaGrid images={imageMedia} />}
+
+      <div className="p-4 space-y-2.5">
+        {/* Title + status badge */}
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-semibold text-[15px] leading-snug flex-1">{title}</h3>
+          <div className="flex gap-1.5 shrink-0 items-center">
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[status] ?? "bg-gray-100"}`}>
+              {status?.replace("_", " ")}
+            </span>
+          </div>
+        </div>
+
+        {/* Description */}
+        {description && (
+          <p className="text-sm text-foreground/80 leading-relaxed">{description}</p>
+        )}
+
+        {/* Meta row */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground pt-0.5">
+          {activityDate && (
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              {new Date(activityDate as string).toLocaleDateString("en-IN", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </span>
+          )}
+          {location && (
+            <span className="flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" />
+              {location}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <VisIcon className="h-3.5 w-3.5" />
+            {visibility}
+          </span>
+          {mediaCount > 0 && imageMedia.length === 0 && (
+            <span className="flex items-center gap-1">
+              <ImageIcon className="h-3.5 w-3.5" />
+              {mediaCount} media
+            </span>
+          )}
+          {noteCount > 0 && (
+            <span className="flex items-center gap-1">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {noteCount} note{noteCount !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {tags.map((tag) => (
+              <span
+                key={tag.id ?? tag.name}
+                className="text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium"
+                style={{
+                  backgroundColor: tag.color ? `${tag.color}15` : undefined,
+                  color: tag.color ?? undefined,
+                }}
+              >
+                <Tag className="h-2.5 w-2.5" />
+                {tag.name}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Notes section */}
+        {notes.length > 0 && (
+          <NotesSection notes={notes} />
+        )}
+
+        {/* Action bar */}
+        {widget.actions && widget.actions.length > 0 && (
+          <div className="flex gap-1 pt-2 border-t -mx-1">
+            {widget.actions.map((action, i) => {
+              const Icon = iconMap[action.icon];
+              const isEdit = action.optionId === "activity.edit";
+              return (
+                <button
+                  key={i}
+                  onClick={() => {
+                    if (isEdit) setIsEditing(true);
+                    else onAction(action);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                >
+                  {Icon && <Icon className="h-4 w-4" />}
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NotesSection({ notes }: { notes: Record<string, unknown>[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const displayNotes = expanded ? notes : notes.slice(0, 2);
+  return (
+    <div className="pt-1.5 border-t space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <MessageSquare className="h-3.5 w-3.5" />
+        Notes ({notes.length})
+      </div>
+      {displayNotes.map((note, i) => {
+        const content = (note.content as string) ?? "";
+        const createdAt = note.created_at as string;
+        const dateStr = createdAt
+          ? new Date(createdAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          : "";
+        return (
+          <div key={(note.id as string) ?? i} className="bg-muted/40 rounded-lg px-3 py-2">
+            <p className="text-sm text-foreground/80">{content}</p>
+            {dateStr && (
+              <p className="text-[10px] text-muted-foreground mt-1">{dateStr}</p>
+            )}
+          </div>
+        );
+      })}
+      {notes.length > 2 && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-primary hover:underline"
+        >
+          {expanded ? "Show less" : `Show all ${notes.length} notes`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MediaGrid({ images }: { images: Record<string, unknown>[] }) {
+  const count = images.length;
+  const urls = images.slice(0, 4).map((m) => ({
+    url: resolveMediaUrl(m)!,
+    alt: (m.original_filename as string) ?? "media",
+  }));
+
+  if (count === 1) {
+    return (
+      <div className="w-full max-h-80 overflow-hidden">
+        <img src={urls[0].url} alt={urls[0].alt} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  if (count === 2) {
+    return (
+      <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
+        {urls.map((u, i) => (
+          <img key={i} src={u.url} alt={u.alt} className="w-full h-64 object-cover" />
+        ))}
+      </div>
+    );
+  }
+
+  if (count === 3) {
+    return (
+      <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
+        <img src={urls[0].url} alt={urls[0].alt} className="w-full h-64 object-cover row-span-2" />
+        <div className="flex flex-col gap-0.5">
+          <img src={urls[1].url} alt={urls[1].alt} className="w-full h-[calc(50%-1px)] object-cover" />
+          <img src={urls[2].url} alt={urls[2].alt} className="w-full h-[calc(50%-1px)] object-cover" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 grid-rows-2 gap-0.5 max-h-64 overflow-hidden">
+      {urls.map((u, i) => (
+        <div key={i} className="relative h-32 overflow-hidden">
+          <img src={u.url} alt={u.alt} className="w-full h-full object-cover" />
+          {i === 3 && count > 4 && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <span className="text-white text-lg font-semibold">+{count - 4}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
