@@ -9,6 +9,9 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import type { ChatMessageResponse, Widget } from "@/types/api";
 
 export async function POST(request: Request) {
+  const initTraceId = crypto.randomUUID();
+  logger.setTraceId(initTraceId);
+
   try {
     if (isPublicMode()) {
       const session = await requireSession();
@@ -65,6 +68,7 @@ export async function POST(request: Request) {
         conversationState: "active",
       };
 
+      logger.clearTraceId();
       return NextResponse.json({
         conversationId,
         messages: [welcomeMsg, menuMsg],
@@ -214,6 +218,7 @@ export async function POST(request: Request) {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversationId);
 
+    logger.clearTraceId();
     return NextResponse.json({
       conversationId,
       messages: allInitMessages,
@@ -232,6 +237,7 @@ export async function POST(request: Request) {
     }
     logger.error("api.chatInit", "Chat init error", { error: (err as Error).message });
     await logger.flush();
+    logger.clearTraceId();
     return NextResponse.json(
       { error: { code: "INTERNAL_ERROR", message: "Internal server error" } },
       { status: 500 }

@@ -15,6 +15,8 @@ interface StructuredLog {
 const buffer: LogEntry[] = [];
 let isCloudWatchEnabled: boolean | null = null;
 
+let _requestTraceId: string | null = null;
+
 function cloudWatchEnabled(): boolean {
   if (isCloudWatchEnabled === null) {
     isCloudWatchEnabled = process.env.CLOUDWATCH_ENABLED === "true";
@@ -28,8 +30,9 @@ function emit(entry: StructuredLog): void {
   if (process.env.NODE_ENV !== "production" || !cloudWatchEnabled()) {
     const prefix = entry.level === "error" ? "\x1b[31m" : entry.level === "warn" ? "\x1b[33m" : "\x1b[36m";
     const reset = "\x1b[0m";
+    const tid = entry.traceId ? ` [${entry.traceId.slice(0, 8)}]` : "";
     const dur = entry.durationMs != null ? ` (${entry.durationMs}ms)` : "";
-    console.log(`${prefix}[${entry.level.toUpperCase()}]${reset} ${entry.service}: ${entry.message}${dur}`);
+    console.log(`${prefix}[${entry.level.toUpperCase()}]${reset}${tid} ${entry.service}: ${entry.message}${dur}`);
     if (entry.data && Object.keys(entry.data).length > 0) {
       console.log("  ", JSON.stringify(entry.data, null, 2).slice(0, 500));
     }
@@ -53,7 +56,7 @@ function log(
     service,
     message,
     data,
-    traceId: opts?.traceId,
+    traceId: opts?.traceId ?? _requestTraceId ?? undefined,
     durationMs: opts?.durationMs,
   });
 }
@@ -69,6 +72,21 @@ export const logger = {
 
   error(service: string, message: string, data?: Record<string, unknown>, opts?: { traceId?: string; durationMs?: number }) {
     log("error", service, message, data, opts);
+  },
+
+  /** Set a request-scoped traceId that is auto-included in all subsequent log entries. */
+  setTraceId(traceId: string): void {
+    _requestTraceId = traceId;
+  },
+
+  /** Clear the request-scoped traceId (call at end of request). */
+  clearTraceId(): void {
+    _requestTraceId = null;
+  },
+
+  /** Return the current request-scoped traceId, if set. */
+  getTraceId(): string | null {
+    return _requestTraceId;
   },
 
   /**

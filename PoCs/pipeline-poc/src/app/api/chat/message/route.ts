@@ -30,6 +30,7 @@ const messageSchema = z.object({
 
 export async function POST(request: Request) {
   const traceId = crypto.randomUUID();
+  logger.setTraceId(traceId);
 
   try {
     const session = await requireSession();
@@ -124,6 +125,7 @@ export async function POST(request: Request) {
       await flushPromise;
     }
 
+    logger.clearTraceId();
     return jsonResponse;
   } catch (err) {
     clearLlmLogContext();
@@ -140,8 +142,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    logger.error("api.chatMessage", "Chat message error", { error: (err as Error).message, traceId });
+    logger.error("api.chatMessage", "Chat message error", { error: (err as Error).message });
     await logger.flush();
+    logger.clearTraceId();
     return NextResponse.json(
       { error: { code: "INTERNAL_ERROR", message: "Internal server error" }, traceId },
       { status: 500 }

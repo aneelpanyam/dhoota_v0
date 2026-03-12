@@ -29,6 +29,8 @@ export async function processMessage(
     hasContent: !!request.content,
   }, traceId);
 
+  logger.setTraceId(trace.getTraceId());
+
   setLlmLogContext({
     tenantId: context.tenantId,
     userId: context.userId,
