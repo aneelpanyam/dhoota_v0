@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
+import { isPublicMode, getPublicTenantId, getPublicUserId } from "@/lib/auth/public-mode";
 import { buildUserContext, optionsToReferences } from "@/lib/pipeline/context";
+import { logger } from "@/lib/logging/logger";
 import { processMessage } from "@/lib/pipeline";
 import { generateId } from "@/lib/utils";
 import { createServiceSupabase } from "@/lib/supabase/server";
@@ -8,6 +10,72 @@ import type { ChatMessageResponse, Widget } from "@/types/api";
 
 export async function POST(request: Request) {
   try {
+    if (isPublicMode()) {
+      const session = await requireSession();
+      const conversationId = generateId();
+      const context = await buildUserContext(session, conversationId);
+      const defaultOpts = optionsToReferences(context.defaultOptions);
+
+      const db = createServiceSupabase();
+      let welcomeText = "Welcome! Ask me about activities, announcements, and more.";
+
+      const tenantId = getPublicTenantId();
+      const userId = getPublicUserId();
+      if (tenantId && userId) {
+        const { data: config } = await db
+          .from("public_site_configs")
+          .select("welcome_message, side_panel_content, theme_overrides")
+          .eq("tenant_id", tenantId)
+          .eq("user_id", userId)
+          .single();
+        if (config?.welcome_message) {
+          welcomeText = config.welcome_message;
+        }
+      }
+
+      const welcomeWidget: Widget = {
+        id: generateId(),
+        type: "text_response",
+        data: { text: welcomeText },
+        bookmarkable: false,
+      };
+
+      const menuWidget: Widget = {
+        id: generateId(),
+        type: "default_options_menu",
+        data: { title: "How can I help you?", options: defaultOpts },
+        bookmarkable: false,
+      };
+
+      const welcomeMsg: ChatMessageResponse = {
+        messageId: generateId(),
+        conversationId,
+        widgets: [welcomeWidget],
+        followUps: [],
+        defaultOptions: defaultOpts,
+        conversationState: "active",
+      };
+
+      const menuMsg: ChatMessageResponse = {
+        messageId: generateId(),
+        conversationId,
+        widgets: [menuWidget],
+        followUps: [],
+        defaultOptions: defaultOpts,
+        conversationState: "active",
+      };
+
+      return NextResponse.json({
+        conversationId,
+        messages: [welcomeMsg, menuMsg],
+        userConfig: {
+          userType: "citizen",
+          theme: {},
+          displayName: "Citizen",
+        },
+      });
+    }
+
     const session = await requireSession();
     const body = await request.json().catch(() => ({}));
     const forceNew = body.forceNew === true;
@@ -74,6 +142,9 @@ export async function POST(request: Request) {
       for (const result of results) {
         if (result.status === "fulfilled") {
           initResults.push(result.value);
+        }
+        if (result.status === "rejected") {
+          logger.warn("api.chatInit", "Init option failed", { error: result.reason?.message ?? String(result.reason) });
         }
       }
     }
@@ -159,7 +230,8 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
-    console.error("Chat init error:", err);
+    logger.error("api.chatInit", "Chat init error", { error: (err as Error).message });
+    await logger.flush();
     return NextResponse.json(
       { error: { code: "INTERNAL_ERROR", message: "Internal server error" } },
       { status: 500 }

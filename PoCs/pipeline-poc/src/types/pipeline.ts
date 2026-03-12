@@ -5,6 +5,7 @@ export interface UserContext {
   userId: string;
   userType: string;
   displayName: string;
+  scopedUserId?: string;
   availableOptions: OptionDefinition[];
   defaultOptions: OptionDefinition[];
   initOptionIds: string[];
@@ -21,10 +22,9 @@ export interface ConversationMessage {
 }
 
 export interface ResolvedOption {
-  type: "predefined" | "dynamic";
+  type: "predefined";
   option?: OptionDefinition;
   extractedParams?: Record<string, unknown>;
-  dynamicSql?: string;
   confidence: number;
   needsMoreInput?: boolean;
 }
@@ -74,18 +74,14 @@ export interface FormattedResponse {
       label: string;
       icon: string;
       optionId: string;
+      paramKey?: string;
       params?: Record<string, unknown>;
       targetResourceId?: string;
       targetResourceType?: string;
+      requiresConfirmation?: boolean;
     }[];
   }[];
   followUpOptionIds: string[];
-}
-
-export interface DynamicSQLResult {
-  sql: string;
-  description: string;
-  params: unknown[];
 }
 
 export interface PipelineResult {

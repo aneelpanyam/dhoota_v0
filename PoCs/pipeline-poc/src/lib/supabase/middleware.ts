@@ -1,7 +1,28 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { isPublicMode, isSuggestionBoxMode } from "@/lib/auth/public-mode";
+
+const PUBLIC_ALLOWED_ROUTES = [
+  "/api/chat/init",
+  "/api/chat/message",
+  "/api/session",
+];
 
 export async function updateSession(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+
+  if (isPublicMode() || isSuggestionBoxMode()) {
+    const isAllowedRoute =
+      path === "/" ||
+      PUBLIC_ALLOWED_ROUTES.some((r) => path.startsWith(r));
+
+    if (!isAllowedRoute) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return NextResponse.next({ request: { headers: request.headers } });
+  }
+
   let response = NextResponse.next({ request: { headers: request.headers } });
 
   const supabase = createServerClient(
@@ -28,10 +49,10 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
   const isAuthRoute = path.startsWith("/login") || path.startsWith("/verify");
+  const isPreAuthApi = path.startsWith("/api/auth/validate-access");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPreAuthApi) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

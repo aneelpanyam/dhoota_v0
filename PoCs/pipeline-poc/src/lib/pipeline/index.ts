@@ -6,11 +6,6 @@ import { startQASession, continueQASession } from "./qa-engine";
 import { refineInput } from "./refiner";
 import { executeSqlTemplates, consumeSqlDebug } from "./executor";
 import { formatResponse } from "./formatter";
-import {
-  analyzeDynamicQuery, buildContextPickerWidget, executeContextualQuery,
-  executeIntelligenceQuery, executeIntelligenceQueryOnDataset,
-} from "./dynamic-sql";
-import { getContextById } from "./query-contexts";
 import { optionsToReferences } from "./context";
 import { loadSqlTemplates } from "./loader";
 import { getLLMProvider } from "@/lib/llm/factory";
@@ -18,21 +13,32 @@ import { consumeLlmDebug } from "@/lib/llm/openai";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { PipelineTrace } from "./trace";
 import { logger } from "@/lib/logging/logger";
+import { handleInsightsQuery } from "./insights";
+import { setLlmLogContext, clearLlmLogContext } from "@/lib/llm/cost";
 
 export async function processMessage(
   request: SendMessageRequest,
-  context: UserContext
+  context: UserContext,
+  traceId?: string
 ): Promise<ChatMessageResponse> {
   const defaultOpts = optionsToReferences(context.defaultOptions);
   const trace = new PipelineTrace({
     source: request.source,
     optionId: request.optionId,
     hasContent: !!request.content,
+  }, traceId);
+
+  setLlmLogContext({
+    tenantId: context.tenantId,
+    userId: context.userId,
+    conversationId: context.conversationId,
+    optionId: request.optionId,
   });
 
   try {
-    if (request.source === "qa_response" && request.optionId === "dynamic_query" && request.params?.selectedContextId) {
-      const result = await handleContextualQueryExecution(request, context, defaultOpts, trace);
+    // Insights path: user sent a question with pinned context items
+    if (request.source === "insights" && request.content && request.params?.contextItems) {
+      const result = await handleInsightsQuery(request, context, defaultOpts, trace);
       result.debugTrace = trace.toJSON();
       return result;
     }
@@ -49,87 +55,91 @@ export async function processMessage(
       return result;
     }
 
+    if (request.targetResourceId && request.optionId) {
+      const targetOption = context.availableOptions.find((o) => o.id === request.optionId);
+      const etype = targetOption?.entity_type ?? request.optionId.split(".")[0];
+      const key = `${etype}_id`;
+      request = { ...request, params: { ...request.params, [key]: request.targetResourceId } };
+    }
+
     const resolved = await trace.step(
       "resolve_option",
       () => resolveOption(request, context),
       { source: request.source, optionId: request.optionId, content: request.content?.slice(0, 100) }
     );
-    trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
-
-    if (resolved.type === "dynamic") {
-      const result = await handleDynamicQuery(request.content ?? "", context, defaultOpts, trace);
-      result.debugTrace = trace.toJSON();
-      return result;
-    }
 
     if (!resolved.option) {
-      const result = buildErrorResponse("I couldn't understand that. Could you try rephrasing, or choose an option?", context, defaultOpts);
+      const result = buildErrorResponse(
+        "Please choose an option from the menu above, or use the insight feature to ask questions about displayed data.",
+        context,
+        defaultOpts
+      );
       result.debugTrace = trace.toJSON();
       return result;
     }
 
-    if (resolved.needsMoreInput) {
-      const qaResult = await trace.step(
-        "qa_session_start",
-        () => startQASession(resolved.option!, resolved.extractedParams ?? {}),
-        { optionId: resolved.option.id }
-      );
+    // Always attempt Q&A — catches optional questions even when all required params are already provided
+    const qaResult = await trace.step(
+      "qa_session_start",
+      () => startQASession(resolved.option!, resolved.extractedParams ?? {}),
+      { optionId: resolved.option.id }
+    );
 
-      if (qaResult.status === "need_more" && qaResult.nextQuestions) {
-        const entityCtx = await fetchEntityContext(resolved.extractedParams ?? {}, context.tenantId);
+    if (qaResult.status === "need_more" && qaResult.nextQuestions) {
+      const entityCtx = await fetchEntityContext(resolved.extractedParams ?? {}, context.tenantId);
 
-        const questionWidgets: Widget[] = qaResult.nextQuestions.map((q) => ({
+      const questionWidgets: Widget[] = qaResult.nextQuestions.map((q) => ({
+        id: generateId(),
+        type: "question_card" as WidgetType,
+        data: {
+          questionText: q.questionText,
+          questionKey: q.questionKey,
+          inlineWidget: q.inlineWidget,
+          widgetConfig: q.widgetConfig ?? {},
+          isRequired: q.isRequired ?? true,
+          optionId: resolved.option!.id,
+          sessionParams: resolved.extractedParams ?? {},
+          entityContext: entityCtx,
+        },
+        bookmarkable: false,
+      }));
+
+      const widgets: Widget[] = [];
+      if (entityCtx) {
+        widgets.push({
           id: generateId(),
-          type: "question_card" as WidgetType,
-          data: {
-            questionText: q.questionText,
-            questionKey: q.questionKey,
-            inlineWidget: q.inlineWidget,
-            widgetConfig: q.widgetConfig ?? {},
-            isRequired: q.isRequired ?? true,
-            optionId: resolved.option!.id,
-            sessionParams: resolved.extractedParams ?? {},
-            entityContext: entityCtx,
-          },
+          type: "text_response" as WidgetType,
+          data: { text: `**${resolved.option!.name}** for: *${entityCtx.title}*${entityCtx.subtitle ? ` (${entityCtx.subtitle})` : ""}` },
           bookmarkable: false,
-        }));
-
-        const widgets: Widget[] = [];
-        if (entityCtx) {
-          widgets.push({
-            id: generateId(),
-            type: "text_response" as WidgetType,
-            data: { text: `**${resolved.option!.name}** for: *${entityCtx.title}*${entityCtx.subtitle ? ` (${entityCtx.subtitle})` : ""}` },
-            bookmarkable: false,
-          });
-        }
-        widgets.push(...questionWidgets);
-
-        const result: ChatMessageResponse = {
-          messageId: generateId(),
-          conversationId: context.conversationId,
-          widgets,
-          followUps: [],
-          defaultOptions: defaultOpts,
-          conversationState: "awaiting_input",
-          debugTrace: trace.toJSON(),
-        };
-        return result;
+        });
       }
+      widgets.push(...questionWidgets);
 
-      resolved.extractedParams = qaResult.collectedParams;
+      return {
+        messageId: generateId(),
+        conversationId: context.conversationId,
+        widgets,
+        followUps: [],
+        defaultOptions: defaultOpts,
+        conversationState: "awaiting_input",
+        debugTrace: trace.toJSON(),
+      };
     }
+
+    resolved.extractedParams = qaResult.collectedParams ?? resolved.extractedParams;
 
     const templates = await loadSqlTemplates(resolved.option.id);
     const hasWrites = templates.some((t) => t.query_type === "write");
 
     if (hasWrites && request.source !== "confirmation") {
-      const skipRefinement = SKIP_REFINEMENT_OPTIONS.has(resolved.option.id);
+      const shouldConfirm = resolved.option.requires_confirmation;
+      const shouldRefine = !resolved.option.skip_refinement;
+
       let confirmFields: { label: string; value: string; inferred?: boolean }[];
       let confirmParams: Record<string, unknown>;
       let suggestedTags: { name: string; confidence: number }[] = [];
 
-      if (skipRefinement) {
+      if (!shouldRefine) {
         confirmParams = resolved.extractedParams ?? {};
         confirmFields = buildSimpleDisplayFields(confirmParams, resolved.option.id);
       } else {
@@ -148,45 +158,49 @@ export async function processMessage(
         }));
       }
 
-      const entityCtxMain = await fetchEntityContext(confirmParams, context.tenantId);
+      if (shouldConfirm) {
+        const entityCtxMain = await fetchEntityContext(confirmParams, context.tenantId);
 
-      const confirmWidget: Widget = {
-        id: generateId(),
-        type: "confirmation_card" as WidgetType,
-        data: {
-          title: `Confirm: ${resolved.option.name}`,
-          fields: confirmFields,
-          suggestedTags,
-          optionId: resolved.option.id,
-          params: confirmParams,
-          entityContext: entityCtxMain,
-        },
-        bookmarkable: false,
-      };
+        const confirmWidget: Widget = {
+          id: generateId(),
+          type: "confirmation_card" as WidgetType,
+          data: {
+            title: `Confirm: ${resolved.option.name}`,
+            fields: confirmFields,
+            suggestedTags,
+            optionId: resolved.option.id,
+            params: confirmParams,
+            entityContext: entityCtxMain,
+          },
+          bookmarkable: false,
+        };
 
-      const summaryWidget: Widget = {
-        id: generateId(),
-        type: "text_response" as WidgetType,
-        data: {
-          text: "Here's what I've prepared. Does this look right?",
-        },
-        bookmarkable: false,
-      };
+        return {
+          messageId: generateId(),
+          conversationId: context.conversationId,
+          widgets: [
+            {
+              id: generateId(),
+              type: "text_response" as WidgetType,
+              data: { text: "Here's what I've prepared. Does this look right?" },
+              bookmarkable: false,
+            },
+            confirmWidget,
+          ],
+          followUps: [],
+          defaultOptions: defaultOpts,
+          conversationState: "awaiting_confirmation",
+          debugTrace: trace.toJSON(),
+        };
+      }
 
-      return {
-        messageId: generateId(),
-        conversationId: context.conversationId,
-        widgets: [summaryWidget, confirmWidget],
-        followUps: [],
-        defaultOptions: defaultOpts,
-        conversationState: "awaiting_confirmation",
-        debugTrace: trace.toJSON(),
-      };
+      // No confirmation needed -- execute directly
+      resolved.extractedParams = confirmParams;
     }
 
     const sqlResults = await trace.step(
       "execute_sql",
-      () => executeSqlTemplates(resolved.option!.id, resolved.extractedParams ?? {}, { tenantId: context.tenantId, userId: context.userId }),
+      () => executeSqlTemplates(resolved.option!.id, resolved.extractedParams ?? {}, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
       { optionId: resolved.option.id, params: resolved.extractedParams }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
@@ -196,7 +210,6 @@ export async function processMessage(
       () => formatResponse(resolved.option!, sqlResults, context),
       { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
     );
-    trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
 
     const processedWidgets = filterEmptyWidgets(
       attachItemActions(formatted.widgets, resolved.option, context)
@@ -210,7 +223,7 @@ export async function processMessage(
       bookmarkable: true,
     }));
 
-    const resourceId = extractActivityIdFromParams(resolved.extractedParams ?? {}, resolved.option.id)
+    const resourceId = extractResourceIdFromParams(resolved.extractedParams ?? {}, resolved.option)
       ?? extractResourceId(sqlResults);
     const followUps = buildFollowUps(resolved.option, context, resourceId);
 
@@ -233,10 +246,12 @@ export async function processMessage(
     };
 
     trace.emitLogs(logger.info.bind(logger));
+    clearLlmLogContext();
     return pipelineResponse;
   } catch (error) {
     logger.error("pipeline", "Pipeline error", { error: (error as Error).message });
     trace.emitLogs(logger.info.bind(logger));
+    clearLlmLogContext();
     const result = buildErrorResponse(
       "Something went wrong processing your request. Please try again.",
       context,
@@ -317,19 +332,73 @@ async function handleQAResponse(
     };
   }
 
-  const skipRefinement = SKIP_REFINEMENT_OPTIONS.has(option.id);
+  const templates = await loadSqlTemplates(option.id);
+  const hasWrites = templates.some((t) => t.query_type === "write");
+  const collectedParams = qaResult.collectedParams ?? {};
+
+  if (!hasWrites) {
+    const sqlResults = await trace.step(
+      "execute_sql",
+      () => executeSqlTemplates(option.id, collectedParams, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
+      { optionId: option.id, params: collectedParams }
+    );
+    trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
+
+    const formatted = await trace.step(
+      "format_response",
+      () => formatResponse(option, sqlResults, context),
+      { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
+    );
+
+    const processedWidgets = filterEmptyWidgets(
+      attachItemActions(formatted.widgets, option, context)
+    );
+
+    const widgets: Widget[] = processedWidgets.map((w) => ({
+      id: generateId(),
+      type: w.type as WidgetType,
+      data: w.data,
+      actions: w.actions,
+      bookmarkable: true,
+    }));
+
+    const resourceId = extractResourceId(sqlResults);
+    const followUps = buildFollowUps(option, context, resourceId);
+
+    return {
+      messageId: generateId(),
+      conversationId: context.conversationId,
+      widgets: [
+        {
+          id: generateId(),
+          type: "text_response" as WidgetType,
+          data: { text: formatted.summary },
+          bookmarkable: false,
+        },
+        ...widgets,
+      ],
+      followUps,
+      defaultOptions: defaultOpts,
+      conversationState: "active",
+    };
+  }
+
+  // Write options
+  const shouldRefine = !option.skip_refinement;
+  const shouldConfirm = option.requires_confirmation;
+
   let confirmFields: { label: string; value: string; inferred?: boolean }[];
   let confirmParams: Record<string, unknown>;
   let suggestedTags: { name: string; confidence: number }[] = [];
 
-  if (skipRefinement) {
-    confirmParams = qaResult.collectedParams ?? {};
+  if (!shouldRefine) {
+    confirmParams = collectedParams;
     confirmFields = buildSimpleDisplayFields(confirmParams, option.id);
   } else {
     const refined = await trace.step(
       "refine_input",
-      () => refineInput(option, qaResult.collectedParams ?? {}, context.tenantId),
-      { params: qaResult.collectedParams }
+      () => refineInput(option, collectedParams, context.tenantId),
+      { params: collectedParams }
     );
     trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
     confirmParams = refined.params;
@@ -341,38 +410,48 @@ async function handleQAResponse(
     }));
   }
 
-  const entityCtxForConfirm = await fetchEntityContext(confirmParams, context.tenantId);
+  if (shouldConfirm) {
+    const entityCtxForConfirm = await fetchEntityContext(confirmParams, context.tenantId);
 
-  const confirmWidget: Widget = {
-    id: generateId(),
-    type: "confirmation_card" as WidgetType,
-    data: {
-      title: `Confirm: ${option.name}`,
-      fields: confirmFields,
-      suggestedTags,
-      optionId: option.id,
-      params: confirmParams,
-      entityContext: entityCtxForConfirm,
-    },
-    bookmarkable: false,
-  };
-
-  return {
-    messageId: generateId(),
-    conversationId: context.conversationId,
-    widgets: [
-      {
-        id: generateId(),
-        type: "text_response" as WidgetType,
-        data: { text: "Here's what I've prepared. Does this look right?" },
-        bookmarkable: false,
+    const confirmWidget: Widget = {
+      id: generateId(),
+      type: "confirmation_card" as WidgetType,
+      data: {
+        title: `Confirm: ${option.name}`,
+        fields: confirmFields,
+        suggestedTags,
+        optionId: option.id,
+        params: confirmParams,
+        entityContext: entityCtxForConfirm,
       },
-      confirmWidget,
-    ],
-    followUps: [],
-    defaultOptions: defaultOpts,
-    conversationState: "awaiting_confirmation",
-  };
+      bookmarkable: false,
+    };
+
+    return {
+      messageId: generateId(),
+      conversationId: context.conversationId,
+      widgets: [
+        {
+          id: generateId(),
+          type: "text_response" as WidgetType,
+          data: { text: "Here's what I've prepared. Does this look right?" },
+          bookmarkable: false,
+        },
+        confirmWidget,
+      ],
+      followUps: [],
+      defaultOptions: defaultOpts,
+      conversationState: "awaiting_confirmation",
+    };
+  }
+
+  // No confirmation -- execute directly
+  return handleConfirmation(
+    { ...request, params: confirmParams },
+    context,
+    defaultOpts,
+    trace
+  );
 }
 
 async function handleConfirmation(
@@ -390,12 +469,12 @@ async function handleConfirmation(
 
   const sqlResults = await trace.step(
     "execute_sql",
-    () => executeSqlTemplates(option.id, params, { tenantId: context.tenantId, userId: context.userId }),
+    () => executeSqlTemplates(option.id, params, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
     { optionId: option.id, paramKeys: Object.keys(params) }
   );
   trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
 
-  const resourceId = extractActivityIdFromParams(params, option.id)
+  const resourceId = extractResourceIdFromParams(params, option)
     ?? extractResourceId(sqlResults);
 
   if (params.tags && Array.isArray(params.tags) && resourceId) {
@@ -433,13 +512,16 @@ async function handleConfirmation(
     }
   }
 
-  if (resourceId && (option.id === "activity.create" || option.id === "activity.edit")) {
-    await trace.step(
-      "generate_ai_summary",
-      () => generateAndStoreAiSummary(resourceId!, params, context.tenantId),
-      { activityId: resourceId }
-    );
-    trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
+  if (resourceId && option.entity_type) {
+    const summaryOptions = new Set(["activity.create", "activity.edit", "announcement.create", "announcement.edit", "info_card.create", "info_card.edit", "program.create", "program.edit"]);
+    if (summaryOptions.has(option.id)) {
+      await trace.step(
+        "generate_ai_summary",
+        () => generateAndStoreAiSummary(resourceId!, params, context.tenantId, option.entity_type!),
+        { resourceId, entityType: option.entity_type }
+      );
+      trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
+    }
   }
 
   const formatted = await trace.step(
@@ -447,9 +529,7 @@ async function handleConfirmation(
     () => formatResponse(option, sqlResults, context),
     { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
   );
-  trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
 
-  // Merge saved media into activity_card widgets (write results don't include media)
   if (savedMediaFiles.length > 0) {
     for (const w of formatted.widgets) {
       if (w.type === "activity_card" && !w.data.media) {
@@ -462,7 +542,6 @@ async function handleConfirmation(
     }
   }
 
-  // Merge tags into activity_card if present
   if (params.tags && Array.isArray(params.tags)) {
     for (const w of formatted.widgets) {
       if (w.type === "activity_card" && !w.data.tags) {
@@ -502,364 +581,6 @@ async function handleConfirmation(
   };
 }
 
-async function handleDynamicQuery(
-  content: string,
-  context: UserContext,
-  defaultOpts: ReturnType<typeof optionsToReferences>,
-  trace: PipelineTrace
-): Promise<ChatMessageResponse> {
-  try {
-    const analysis = await trace.step(
-      "analyze_dynamic_query",
-      () => analyzeDynamicQuery(content, context.recentMessages, context.tenantId),
-      { query: content.slice(0, 100) }
-    );
-    trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
-
-    const conversationStrs = context.recentMessages
-      .filter((m) => m.content)
-      .map((m) => `${m.role}: ${m.content}`);
-
-    // Intelligence query with a resolved entity (e.g., "give me insights about this activity")
-    if (analysis.queryMode === "intelligence" && analysis.resolvedEntity) {
-      return await handleIntelligenceQuery(
-        content, analysis.resolvedEntity, conversationStrs, context, defaultOpts, trace
-      );
-    }
-
-    // Intelligence query without specific entity — auto-select best context and analyze
-    if (analysis.queryMode === "intelligence") {
-      const bestCtx = analysis.contexts[0];
-      if (bestCtx) {
-        // For intelligence, we always have a context to work with — use the best one
-        return await handleIntelligenceOnDataset(
-          content, bestCtx.contextId, conversationStrs, context, defaultOpts, trace
-        );
-      }
-    }
-
-    // Data query — auto-select context if high confidence single match
-    const topCtx = analysis.contexts[0];
-    if (topCtx && topCtx.relevance >= 0.85) {
-      const autoResult = await handleContextualQueryExecution(
-        {
-          conversationId: context.conversationId,
-          source: "qa_response",
-          optionId: "dynamic_query",
-          params: {
-            selectedContextId: topCtx.contextId,
-            originalQuery: content,
-            queryMode: analysis.queryMode,
-          },
-        },
-        context,
-        defaultOpts,
-        trace
-      );
-      return autoResult;
-    }
-
-    // Show context picker — pass queryMode so it routes correctly on selection
-    const pickerWidget = buildContextPickerWidget(content, analysis.contexts, analysis.queryMode);
-    const promptText = analysis.queryMode === "intelligence"
-      ? "I'd like to analyze that for you. Which data should I look at?"
-      : "I can look that up for you. Which data would you like me to search?";
-    return {
-      messageId: generateId(),
-      conversationId: context.conversationId,
-      widgets: [
-        {
-          id: generateId(),
-          type: "text_response" as WidgetType,
-          data: { text: promptText },
-          bookmarkable: false,
-        },
-        pickerWidget,
-      ],
-      followUps: [],
-      defaultOptions: defaultOpts,
-      conversationState: "awaiting_input",
-    };
-  } catch (error) {
-    logger.error("pipeline.dynamicQuery", "Dynamic query analysis failed", { error: (error as Error).message });
-    return buildErrorResponse(
-      "I couldn't understand that query. Could you try asking in a different way?",
-      context,
-      defaultOpts
-    );
-  }
-}
-
-async function handleIntelligenceQuery(
-  userQuery: string,
-  entity: import("./dynamic-sql").ResolvedEntity,
-  conversationContext: string[],
-  context: UserContext,
-  defaultOpts: ReturnType<typeof optionsToReferences>,
-  trace: PipelineTrace
-): Promise<ChatMessageResponse> {
-  const analysis = await trace.step(
-    "intelligence_analysis",
-    () => executeIntelligenceQuery(userQuery, entity, conversationContext),
-    { entityType: entity.type, entityId: entity.id, entityTitle: entity.title }
-  );
-  trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
-
-  const widgets: Widget[] = [
-    {
-      id: generateId(),
-      type: "text_response" as WidgetType,
-      data: { text: analysis.response },
-      bookmarkable: true,
-    },
-  ];
-
-  if (analysis.followUpSuggestions && analysis.followUpSuggestions.length > 0) {
-    widgets.push({
-      id: generateId(),
-      type: "text_response" as WidgetType,
-      data: {
-        text: "**You might also want to ask:**\n" +
-          analysis.followUpSuggestions.map((s) => `- ${s}`).join("\n"),
-      },
-      bookmarkable: false,
-    });
-  }
-
-  const followUps: import("@/types/api").OptionReference[] = [];
-  if (entity.type === "activity") {
-    const viewOpt = context.availableOptions.find((o) => o.id === "activity.view");
-    if (viewOpt) {
-      followUps.push({
-        optionId: "activity.view",
-        name: "View Activity Details",
-        icon: "Eye",
-        params: { activity_id: entity.id },
-      });
-    }
-  }
-
-  return {
-    messageId: generateId(),
-    conversationId: context.conversationId,
-    widgets,
-    followUps,
-    defaultOptions: defaultOpts,
-    conversationState: "active",
-  };
-}
-
-async function handleIntelligenceOnDataset(
-  userQuery: string,
-  contextId: string,
-  conversationContext: string[],
-  context: UserContext,
-  defaultOpts: ReturnType<typeof optionsToReferences>,
-  trace: PipelineTrace
-): Promise<ChatMessageResponse> {
-  const ctx = getContextById(contextId);
-  if (!ctx) {
-    return buildErrorResponse("Unknown data context.", context, defaultOpts);
-  }
-
-  const { sqlResult } = await trace.step(
-    "fetch_dataset_for_intelligence",
-    () => executeContextualQuery(
-      userQuery, contextId, context.tenantId
-    ),
-    { contextId, query: userQuery.slice(0, 100) }
-  );
-  trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined, sql: consumeSqlDebug() ?? undefined });
-
-  const analysis = await trace.step(
-    "intelligence_analysis",
-    () => executeIntelligenceQueryOnDataset(
-      userQuery, sqlResult.rows, ctx.label, conversationContext
-    ),
-    { contextLabel: ctx.label, rowCount: sqlResult.rowCount }
-  );
-  trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
-
-  const widgets: Widget[] = [
-    {
-      id: generateId(),
-      type: "text_response" as WidgetType,
-      data: { text: analysis.response },
-      bookmarkable: true,
-    },
-  ];
-
-  if (analysis.followUpSuggestions && analysis.followUpSuggestions.length > 0) {
-    widgets.push({
-      id: generateId(),
-      type: "text_response" as WidgetType,
-      data: {
-        text: "**You might also want to ask:**\n" +
-          analysis.followUpSuggestions.map((s) => `- ${s}`).join("\n"),
-      },
-      bookmarkable: false,
-    });
-  }
-
-  return {
-    messageId: generateId(),
-    conversationId: context.conversationId,
-    widgets,
-    followUps: [],
-    defaultOptions: defaultOpts,
-    conversationState: "active",
-  };
-}
-
-async function handleContextualQueryExecution(
-  request: SendMessageRequest,
-  context: UserContext,
-  defaultOpts: ReturnType<typeof optionsToReferences>,
-  trace: PipelineTrace
-): Promise<ChatMessageResponse> {
-  const contextId = request.params?.selectedContextId as string;
-  const originalQuery = request.params?.originalQuery as string;
-  const queryMode = (request.params?.queryMode as string) ?? "data";
-
-  try {
-    const { sqlResult, sqlInfo, context: queryCtx } = await trace.step(
-      "contextual_dynamic_query",
-      () => executeContextualQuery(originalQuery, contextId, context.tenantId),
-      { contextId, query: originalQuery?.slice(0, 100), queryMode }
-    );
-    trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined, sql: consumeSqlDebug() ?? undefined });
-
-    // Intelligence mode: fetch data then run AI analysis on it
-    if (queryMode === "intelligence" && sqlResult.rowCount > 0) {
-      const conversationStrs = context.recentMessages
-        .filter((m) => m.content)
-        .map((m) => `${m.role}: ${m.content}`);
-
-      const analysis = await trace.step(
-        "intelligence_analysis",
-        () => executeIntelligenceQueryOnDataset(
-          originalQuery, sqlResult.rows, queryCtx.label, conversationStrs
-        ),
-        { contextLabel: queryCtx.label, rowCount: sqlResult.rowCount }
-      );
-      trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
-
-      const widgets: Widget[] = [
-        {
-          id: generateId(),
-          type: "text_response" as WidgetType,
-          data: { text: analysis.response },
-          bookmarkable: true,
-        },
-      ];
-
-      if (analysis.followUpSuggestions && analysis.followUpSuggestions.length > 0) {
-        widgets.push({
-          id: generateId(),
-          type: "text_response" as WidgetType,
-          data: {
-            text: "**You might also want to ask:**\n" +
-              analysis.followUpSuggestions.map((s) => `- ${s}`).join("\n"),
-          },
-          bookmarkable: false,
-        });
-      }
-
-      return {
-        messageId: generateId(),
-        conversationId: context.conversationId,
-        widgets,
-        followUps: [],
-        defaultOptions: defaultOpts,
-        conversationState: "active",
-      };
-    }
-
-    // Data mode: show results as widgets
-    const widgets: Widget[] = [];
-
-    widgets.push({
-      id: generateId(),
-      type: "text_response" as WidgetType,
-      data: { text: sqlInfo.description },
-      bookmarkable: false,
-    });
-
-    if (sqlResult.rowCount === 0) {
-      widgets.push({
-        id: generateId(),
-        type: "text_response" as WidgetType,
-        data: { text: `No results found in **${queryCtx.label}** for your query.` },
-        bookmarkable: false,
-      });
-    } else if (sqlInfo.suggestedWidgetType === "stats_card") {
-      widgets.push({
-        id: generateId(),
-        type: "stats_card" as WidgetType,
-        data: { items: sqlResult.rows },
-        bookmarkable: true,
-      });
-    } else if (sqlInfo.suggestedWidgetType === "chart") {
-      const rows = sqlResult.rows;
-      const cols = sqlInfo.outputColumns;
-      const firstRow = rows[0] ?? {};
-      const labelCol = cols.find((c) => typeof firstRow[c] === "string") ?? cols[0];
-      const valueCols = cols.filter((c) => c !== labelCol && typeof firstRow[c] === "number");
-      if (valueCols.length === 0) {
-        const fallback = cols.find((c) => c !== labelCol) ?? cols[1];
-        if (fallback) valueCols.push(fallback);
-      }
-
-      widgets.push({
-        id: generateId(),
-        type: "chart" as WidgetType,
-        data: {
-          chartType: sqlInfo.chartType ?? "bar",
-          title: sqlInfo.description,
-          labels: rows.map((r) => String(r[labelCol])),
-          datasets: valueCols.map((col) => ({
-            label: col.replace(/_/g, " "),
-            data: rows.map((r) => Number(r[col]) || 0),
-          })),
-        },
-        bookmarkable: true,
-      });
-    } else {
-      widgets.push({
-        id: generateId(),
-        type: "data_list" as WidgetType,
-        data: {
-          items: sqlResult.rows,
-          title: queryCtx.label,
-          columns: sqlInfo.outputColumns,
-        },
-        bookmarkable: true,
-      });
-    }
-
-    return {
-      messageId: generateId(),
-      conversationId: context.conversationId,
-      widgets,
-      followUps: [],
-      defaultOptions: defaultOpts,
-      conversationState: "active",
-    };
-  } catch (error) {
-    logger.error("pipeline.contextualQuery", "Contextual query execution failed", { error: (error as Error).message });
-    return buildErrorResponse(
-      "The query didn't work out. Could you rephrase or try a different context?",
-      context,
-      defaultOpts,
-      {
-        source: "qa_response",
-        optionId: "dynamic_query",
-        params: { selectedContextId: contextId, originalQuery },
-      }
-    );
-  }
-}
-
 function extractResourceId(sqlResults: import("@/types/pipeline").SqlResult[]): string | undefined {
   for (const result of sqlResults) {
     if (result.rows.length === 1 && result.rows[0]?.id) {
@@ -869,18 +590,18 @@ function extractResourceId(sqlResults: import("@/types/pipeline").SqlResult[]): 
   return undefined;
 }
 
-function extractActivityIdFromParams(
+function extractResourceIdFromParams(
   params: Record<string, unknown>,
-  optionId: string
+  option: import("@/types/options").OptionDefinition
 ): string | undefined {
-  const childOptions = [
-    "activity.add_note", "activity.add_media",
-    "activity.view", "activity.edit", "activity.delete",
-  ];
-  if (childOptions.includes(optionId) && params.activity_id) {
-    return String(params.activity_id);
-  }
+  const entityType = option.entity_type ?? option.id.split(".")[0];
+  const paramKey = `${entityType}_id`;
+  if (params[paramKey]) return String(params[paramKey]);
   return undefined;
+}
+
+function isChildOption(optionId: string): boolean {
+  return /\.(view|edit|delete|add_|remove_|respond|assign|revoke|regenerate)/.test(optionId);
 }
 
 function buildFollowUps(
@@ -888,10 +609,8 @@ function buildFollowUps(
   context: UserContext,
   resourceId?: string
 ): import("@/types/api").OptionReference[] {
-  const activityOptions = [
-    "activity.view", "activity.edit", "activity.delete",
-    "activity.add_note", "activity.add_media",
-  ];
+  const entityType = option.entity_type ?? option.id.split(".")[0];
+  const paramKey = `${entityType}_id`;
 
   return option.follow_up_option_ids
     .map((id) => context.availableOptions.find((o) => o.id === id))
@@ -902,8 +621,8 @@ function buildFollowUps(
         name: opt!.name,
         icon: opt!.icon ?? "Zap",
       };
-      if (resourceId && activityOptions.includes(opt!.id)) {
-        ref.params = { activity_id: resourceId };
+      if (resourceId && paramKey && isChildOption(opt!.id)) {
+        ref.params = { [paramKey]: resourceId };
       }
       return ref;
     });
@@ -926,10 +645,7 @@ async function saveActivityTags(
 
   if (!tags || tags.length === 0) return;
 
-  await db
-    .from("activity_tags")
-    .delete()
-    .eq("activity_id", activityId);
+  await db.from("activity_tags").delete().eq("activity_id", activityId);
 
   const rows = tags.map((tag: { id: string }) => ({
     activity_id: activityId,
@@ -939,20 +655,8 @@ async function saveActivityTags(
   await db.from("activity_tags").insert(rows);
 }
 
-const SKIP_REFINEMENT_OPTIONS = new Set([
-  "activity.add_note",
-  "activity.add_media",
-  "activity.delete",
-  "tag.manage",
-  "tag.create",
-]);
-
 const HIDDEN_DISPLAY_KEYS = new Set([
-  "activity_id",
-  "tenant_id",
-  "user_id",
-  "media_keys",
-  "media_file_names",
+  "activity_id", "tenant_id", "user_id", "media_keys", "media_file_names",
 ]);
 
 function buildSimpleDisplayFields(
@@ -969,26 +673,25 @@ function buildSimpleDisplayFields(
   return fields;
 }
 
-const ITEM_LEVEL_OPTIONS = [
-  "activity.view", "activity.edit",
-  "activity.add_note", "activity.add_media", "activity.delete",
-];
-
 function attachItemActions(
   widgets: { type: string; data: Record<string, unknown>; actions?: import("@/types/api").WidgetAction[] }[],
   option: import("@/types/options").OptionDefinition | null,
   context: UserContext
 ): typeof widgets {
-  if (!option || option.category !== "activity") return widgets;
+  if (!option) return widgets;
+
+  const entityType = option.entity_type ?? option.id.split(".")[0];
+  const paramKey = `${entityType}_id`;
 
   const itemActions: import("@/types/api").WidgetAction[] = option.follow_up_option_ids
-    .filter((id) => ITEM_LEVEL_OPTIONS.includes(id))
+    .filter((id) => isChildOption(id) && !/\.(view|details|edit)$/.test(id))
     .map((id) => context.availableOptions.find((o) => o.id === id))
     .filter(Boolean)
     .map((opt) => ({
       label: opt!.name,
       icon: opt!.icon ?? "Zap",
       optionId: opt!.id,
+      paramKey,
     }));
 
   if (itemActions.length === 0) return widgets;
@@ -996,12 +699,12 @@ function attachItemActions(
   return widgets.map((w) => {
     if (w.type === "data_list") return { ...w, actions: itemActions };
     if (w.type === "activity_card") {
-      const activityId = w.data.id as string | undefined;
-      const cardActions = activityId
+      const resourceId = w.data.id as string | undefined;
+      const cardActions = resourceId
         ? itemActions.map((a) => ({
             ...a,
-            targetResourceId: activityId,
-            params: { activity_id: activityId },
+            targetResourceId: resourceId,
+            params: { [paramKey]: resourceId },
           }))
         : itemActions;
       return { ...w, actions: cardActions };
@@ -1098,9 +801,10 @@ async function fetchEntityContext(
 }
 
 async function generateAndStoreAiSummary(
-  activityId: string,
+  resourceId: string,
   params: Record<string, unknown>,
-  tenantId: string
+  tenantId: string,
+  entityType: string
 ): Promise<void> {
   try {
     const llm = getLLMProvider();
@@ -1112,21 +816,31 @@ async function generateAndStoreAiSummary(
       status: params.status,
       visibility: params.visibility,
       tags: params.tags,
+      content: params.content,
     });
 
     const db = createServiceSupabase();
+    const tableMap: Record<string, string> = {
+      activity: "activities",
+      announcement: "announcements",
+      info_card: "info_cards",
+      program: "programs",
+    };
+    const table = tableMap[entityType];
+    if (!table) return;
+
     await db
-      .from("activities")
+      .from(table)
       .update({
         ai_summary: {
           ...summary,
           generatedAt: new Date().toISOString(),
         },
       })
-      .eq("id", activityId)
+      .eq("id", resourceId)
       .eq("tenant_id", tenantId);
   } catch {
-    // Non-critical: if summary generation fails, the activity still works
+    // Non-critical
   }
 }
 

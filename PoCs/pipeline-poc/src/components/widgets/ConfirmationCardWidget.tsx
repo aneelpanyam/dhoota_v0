@@ -100,13 +100,74 @@ function MediaPreviewGrid({ files }: { files: MediaFile[] }) {
   );
 }
 
-const EDITABLE_PARAM_KEYS = ["title", "description", "location", "activity_date", "status", "visibility"];
+const SELECT_OPTIONS: Record<string, { label: string; value: string }[]> = {
+  status: [
+    { label: "Completed", value: "completed" },
+    { label: "Planned", value: "planned" },
+    { label: "In Progress", value: "in_progress" },
+    { label: "Cancelled", value: "cancelled" },
+    { label: "Draft", value: "draft" },
+    { label: "Active", value: "active" },
+    { label: "Archived", value: "archived" },
+  ],
+  visibility: [
+    { label: "Private", value: "private" },
+    { label: "Team", value: "team" },
+    { label: "Public", value: "public" },
+  ],
+  subscription: [
+    { label: "Free", value: "free" },
+    { label: "Basic", value: "basic" },
+    { label: "Premium", value: "premium" },
+  ],
+  user_type: [
+    { label: "Worker", value: "worker" },
+    { label: "Candidate", value: "candidate" },
+    { label: "Representative", value: "representative" },
+  ],
+  regenerate_access_code: [
+    { label: "No", value: "false" },
+    { label: "Yes", value: "true" },
+  ],
+  deactivate: [
+    { label: "No", value: "false" },
+    { label: "Yes", value: "true" },
+  ],
+  enabled: [
+    { label: "Yes", value: "true" },
+    { label: "No", value: "false" },
+  ],
+};
+
+const TEXTAREA_KEYS = new Set(["description", "content", "notes"]);
+const DATE_KEYS = new Set(["activity_date", "date", "date_from", "date_to"]);
 
 interface EntityContextData {
   entityType: string;
   entityId: string;
   title: string;
   subtitle?: string;
+}
+
+function deriveEditableKeys(
+  fields: { label: string; value: string }[],
+  params: Record<string, unknown>
+): string[] {
+  const fieldLabels = new Set(fields.map((f) => f.label.toLowerCase()));
+  const keys: string[] = [];
+  for (const key of Object.keys(params)) {
+    const humanized = key.replace(/_/g, " ").toLowerCase();
+    if (fieldLabels.has(humanized) || fieldLabels.has(key.toLowerCase())) {
+      keys.push(key);
+    }
+  }
+  if (keys.length === 0) {
+    for (const f of fields) {
+      const guessedKey = f.label.toLowerCase().replace(/ /g, "_");
+      keys.push(guessedKey);
+    }
+  }
+  return keys;
 }
 
 export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
@@ -118,10 +179,12 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
   const params = (d.params as Record<string, unknown>) ?? {};
   const entityContext = d.entityContext as EntityContextData | null | undefined;
 
+  const editableKeys = deriveEditableKeys(fields, params);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editParams, setEditParams] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
-    for (const key of EDITABLE_PARAM_KEYS) {
+    for (const key of editableKeys) {
       if (params[key] != null) initial[key] = String(params[key]);
     }
     return initial;
@@ -174,12 +237,12 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
         {contextBanner}
 
         <div className="space-y-3">
-          {EDITABLE_PARAM_KEYS.map((key) => {
+          {editableKeys.map((key) => {
             if (!(key in editParams)) return null;
             const label = formatLabel(key);
-            const isTextArea = key === "description";
+            const selectOpts = SELECT_OPTIONS[key];
 
-            if (key === "status") {
+            if (selectOpts) {
               return (
                 <div key={key} className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">{label}</label>
@@ -188,27 +251,24 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
                     onChange={(e) => setEditParams((p) => ({ ...p, [key]: e.target.value }))}
                     className="w-full px-3 py-2 rounded-lg border text-sm bg-background"
                   >
-                    <option value="completed">Completed</option>
-                    <option value="planned">Planned</option>
-                    <option value="in_progress">In Progress</option>
+                    {selectOpts.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
               );
             }
 
-            if (key === "visibility") {
+            if (TEXTAREA_KEYS.has(key)) {
               return (
                 <div key={key} className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">{label}</label>
-                  <select
+                  <textarea
                     value={editParams[key] ?? ""}
                     onChange={(e) => setEditParams((p) => ({ ...p, [key]: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border text-sm bg-background"
-                  >
-                    <option value="private">Private</option>
-                    <option value="team">Team</option>
-                    <option value="public">Public</option>
-                  </select>
+                    rows={3}
+                    className="w-full px-3 py-2 rounded-lg border text-sm bg-background resize-none"
+                  />
                 </div>
               );
             }
@@ -216,21 +276,12 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
             return (
               <div key={key} className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{label}</label>
-                {isTextArea ? (
-                  <textarea
-                    value={editParams[key] ?? ""}
-                    onChange={(e) => setEditParams((p) => ({ ...p, [key]: e.target.value }))}
-                    rows={3}
-                    className="w-full px-3 py-2 rounded-lg border text-sm bg-background resize-none"
-                  />
-                ) : (
-                  <input
-                    type={key === "activity_date" ? "date" : "text"}
-                    value={editParams[key] ?? ""}
-                    onChange={(e) => setEditParams((p) => ({ ...p, [key]: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border text-sm bg-background"
-                  />
-                )}
+                <input
+                  type={DATE_KEYS.has(key) ? "date" : "text"}
+                  value={editParams[key] ?? ""}
+                  onChange={(e) => setEditParams((p) => ({ ...p, [key]: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border text-sm bg-background"
+                />
               </div>
             );
           })}

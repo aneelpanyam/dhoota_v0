@@ -159,14 +159,23 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       )}
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">{questionText}</p>
-        {!isRequired && (
+        <div className="flex items-center gap-2">
+          {!isRequired && (
+            <button
+              onClick={handleSkip}
+              className="text-xs text-muted-foreground hover:text-foreground transition"
+            >
+              Skip
+            </button>
+          )}
           <button
-            onClick={handleSkip}
-            className="text-xs text-muted-foreground hover:text-foreground transition"
+            onClick={onCancel}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition"
           >
-            Skip
+            <X className="h-3 w-3" />
+            Cancel
           </button>
-        )}
+        </div>
       </div>
 
       {inlineWidget === "file_upload" ? (

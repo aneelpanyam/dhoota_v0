@@ -1,6 +1,7 @@
 "use client";
 
 import type { Widget, WidgetAction, WidgetType } from "@/types/api";
+import type { ContextItem } from "@/components/chat/ContextStrip";
 import { TextResponseWidget } from "./TextResponseWidget";
 import { ActivityCardWidget } from "./ActivityCardWidget";
 import { DataListWidget } from "./DataListWidget";
@@ -13,8 +14,10 @@ import { QuestionCardWidget } from "./QuestionCardWidget";
 import { DefaultOptionsMenuWidget } from "./DefaultOptionsMenuWidget";
 import { ErrorCardWidget } from "./ErrorCardWidget";
 import { ContextPickerWidget } from "./ContextPickerWidget";
+import { CalendarWidget } from "./CalendarWidget";
+import { TimelineWidget } from "./TimelineWidget";
 
-interface WidgetRendererProps {
+export interface WidgetRendererProps {
   widget: Widget;
   onAction: (action: WidgetAction) => void;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
@@ -25,6 +28,7 @@ interface WidgetRendererProps {
     content?: string
   ) => void;
   onCancel: () => void;
+  onPinToContext?: (item: ContextItem) => void;
 }
 
 const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = {
@@ -40,9 +44,8 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   default_options_menu: DefaultOptionsMenuWidget,
   error_card: ErrorCardWidget,
   context_picker: ContextPickerWidget,
-  // Stub these out for PoC — they render as text_response
-  calendar: TextResponseWidget,
-  timeline: TextResponseWidget,
+  calendar: CalendarWidget,
+  timeline: TimelineWidget,
   tag_cloud: TextResponseWidget,
   summary: TextResponseWidget,
   conversation_thread: TextResponseWidget,

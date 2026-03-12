@@ -17,6 +17,7 @@ export interface ChatMessage {
   timestamp: Date;
   flowId?: string;
   collapsedMessages?: ChatMessage[];
+  contextItems?: { entityType: string; entityId: string; label: string; summary: string; viewAction?: { optionId: string; params: Record<string, unknown> } }[];
 }
 
 export interface ConversationSummary {
@@ -199,7 +200,8 @@ export function useChat(): UseChatReturn {
       const isFlowStart =
         request.source === "default_option" ||
         request.source === "inline_action" ||
-        request.source === "chat";
+        request.source === "chat" ||
+        request.source === "insights";
 
       if (isFlowStart) {
         activeFlowIdRef.current = crypto.randomUUID();
@@ -211,12 +213,17 @@ export function useChat(): UseChatReturn {
       // Add user message to the list and record flow start index
       const userContent = request.content || deriveUserContent(request);
       if (userContent) {
+        const insightContext =
+          request.source === "insights" && Array.isArray(request.params?.contextItems)
+            ? (request.params!.contextItems as ChatMessage["contextItems"])
+            : undefined;
         const userMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
           content: userContent,
           timestamp: new Date(),
           flowId: currentFlowId,
+          contextItems: insightContext,
         };
         setMessages((prev) => {
           if (isFlowStart) flowStartIndexRef.current = prev.length;

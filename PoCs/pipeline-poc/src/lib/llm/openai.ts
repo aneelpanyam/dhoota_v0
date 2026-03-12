@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { OptionSummary } from "@/types/options";
 import type { LlmCallDebug } from "@/lib/pipeline/trace";
 import { logger } from "@/lib/logging/logger";
+import { logLlmCall } from "./cost";
 import type {
   LLMProvider,
   IntentClassification,
@@ -9,12 +10,8 @@ import type {
   RefinementContext,
   FormattedResponse,
   FormatContext,
-  DynamicSQLResult,
   QuestionGroup,
   ActivitySummary,
-  ContextAnalysisResult,
-  ContextualSQLResult,
-  IntelligenceAnalysis,
 } from "./provider";
 
 let _llmCallDebug: LlmCallDebug | null = null;
@@ -41,20 +38,53 @@ function captureLlmDebug(
   };
 }
 
-const AVAILABLE_TABLES_SCHEMA = `
-Tables (all tenant-scoped with tenant_id):
-- activities: id, tenant_id, created_by, title, description, status(planned/in_progress/completed/cancelled), visibility(private/team/public), activity_date, location, is_pinned, created_at, deleted_at
-- activity_notes: id, tenant_id, activity_id, created_by, content, created_at
-- activity_media: id, tenant_id, activity_id, media_type, original_filename, s3_key, mime_type, created_at
-- tags: id, tenant_id(NULL for system), name, slug, color, source(system/custom/ai)
-- activity_tags: id, activity_id, tag_id, confidence
-`.trim();
+function trackCost(
+  model: string,
+  operation: string,
+  response: { usage?: { input_tokens?: number; output_tokens?: number } },
+  startMs: number,
+  success: boolean,
+  errorMessage?: string
+) {
+  const inputTokens = response.usage?.input_tokens ?? 0;
+  const outputTokens = response.usage?.output_tokens ?? 0;
+  logLlmCall({
+    model,
+    operation,
+    inputTokens,
+    outputTokens,
+    latencyMs: Date.now() - startMs,
+    success,
+    errorMessage,
+  });
+}
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI;
 
   constructor() {
     this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+
+  async chat(systemPrompt: string, userMessage: string): Promise<string> {
+    const startMs = Date.now();
+    try {
+      const response = await this.client.responses.create({
+        model: "gpt-5-mini",
+        instructions: systemPrompt,
+        input: userMessage,
+        max_output_tokens: 2000,
+        store: false,
+      });
+      const content = response.output_text ?? "";
+      captureLlmDebug("gpt-5-mini", systemPrompt, userMessage, content, response.status);
+      trackCost("gpt-5-mini", "chat", response, startMs, true);
+      return content;
+    } catch (error) {
+      trackCost("gpt-5-mini", "chat", {}, startMs, false, (error as Error).message);
+      logger.error("llm.chat", "Chat call failed", { error: (error as Error).message });
+      throw error;
+    }
   }
 
   async classifyIntent(
@@ -71,6 +101,7 @@ export class OpenAIProvider implements LLMProvider {
       : "";
 
     const sysPrompt = `You classify user messages into predefined options. Available options:\n${optionList}${contextStr}\n\nRespond with JSON: {"optionId": "option.id or null if no match", "confidence": 0.0-1.0, "extractedParams": {extracted parameters from the text}}`;
+    const startMs = Date.now();
     try {
       const response = await this.client.responses.create({
         model: "gpt-5-nano",
@@ -82,8 +113,10 @@ export class OpenAIProvider implements LLMProvider {
       });
       const content = response.output_text ?? "";
       captureLlmDebug("gpt-5-nano", sysPrompt, userText, content, response.status);
+      trackCost("gpt-5-nano", "classifyIntent", response, startMs, true);
       return JSON.parse(content) as IntentClassification;
-    } catch {
+    } catch (err) {
+      trackCost("gpt-5-nano", "classifyIntent", {}, startMs, false, (err as Error).message);
       return { optionId: null, confidence: 0, extractedParams: {} };
     }
   }
@@ -93,6 +126,7 @@ export class OpenAIProvider implements LLMProvider {
     targetSchema: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const sysPrompt = `Extract structured parameters from the user text based on this schema:\n${JSON.stringify(targetSchema, null, 2)}\n\nReturn JSON with the extracted parameters. Infer values where reasonable (e.g. "today morning" = today's date at 9am, "yesterday" = yesterday). If a field cannot be inferred, omit it.`;
+    const startMs = Date.now();
     try {
       const response = await this.client.responses.create({
         model: "gpt-5-nano",
@@ -104,8 +138,10 @@ export class OpenAIProvider implements LLMProvider {
       });
       const content = response.output_text ?? "";
       captureLlmDebug("gpt-5-nano", sysPrompt, userText, content, response.status);
+      trackCost("gpt-5-nano", "extractParams", response, startMs, true);
       return JSON.parse(content);
-    } catch {
+    } catch (err) {
+      trackCost("gpt-5-nano", "extractParams", {}, startMs, false, (err as Error).message);
       return {};
     }
   }
@@ -137,6 +173,7 @@ export class OpenAIProvider implements LLMProvider {
     const TOKEN_LIMITS = [5000, 8000, 10000];
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const startMs = Date.now();
       try {
         const response = await this.client.responses.create({
           model: "gpt-5-mini",
@@ -153,6 +190,7 @@ export class OpenAIProvider implements LLMProvider {
 
         if (!content || status === "incomplete") {
           const detail = (response as unknown as Record<string, unknown>).incomplete_details;
+          trackCost("gpt-5-mini", "refineInput", response, startMs, false, "incomplete");
           logger.warn("llm.refineInput", `Attempt ${attempt + 1}/${MAX_ATTEMPTS}: empty/incomplete`, {
             status, details: detail as Record<string, unknown> ?? {},
           });
@@ -160,12 +198,14 @@ export class OpenAIProvider implements LLMProvider {
           return this.buildRefineFallback(rawParams);
         }
 
+        trackCost("gpt-5-mini", "refineInput", response, startMs, true);
         const parsed = JSON.parse(content) as RefinedInput;
         parsed.params = { ...rawParams, ...parsed.params };
         logger.info("llm.refineInput", "LLM success", { title: parsed.params?.title as string });
         return parsed;
       } catch (err) {
         const errObj = err as Record<string, unknown>;
+        trackCost("gpt-5-mini", "refineInput", {}, startMs, false, (errObj?.message ?? String(err)) as string);
         logger.error("llm.refineInput", `Attempt ${attempt + 1}/${MAX_ATTEMPTS} failed`, {
           code: errObj?.code as string, error: (errObj?.message ?? String(err)) as string,
         });
@@ -228,6 +268,7 @@ Widget types: text_response, activity_card, data_list, chart, stats_card.
 For data_list: pass DB rows directly as items. Do NOT add actions to widgets.
 For activity_card: use snake_case field names matching DB columns.`;
     const userInput = JSON.stringify(results);
+    const startMs = Date.now();
     try {
       const response = await this.client.responses.create({
         model: "gpt-5-nano",
@@ -239,8 +280,10 @@ For activity_card: use snake_case field names matching DB columns.`;
       });
       const content = response.output_text ?? "";
       captureLlmDebug("gpt-5-nano", sysPrompt, userInput, content, response.status);
+      trackCost("gpt-5-nano", "formatResponse", response, startMs, true);
       return JSON.parse(content) as FormattedResponse;
-    } catch {
+    } catch (err) {
+      trackCost("gpt-5-nano", "formatResponse", {}, startMs, false, (err as Error).message);
       return {
         summary: "Here are the results.",
         widgets: [{ type: "text_response", data: { text: JSON.stringify(results, null, 2) } }],
@@ -249,29 +292,12 @@ For activity_card: use snake_case field names matching DB columns.`;
     }
   }
 
-  async generateDynamicSQL(
-    userIntent: string,
-    _tableSchemas?: string
-  ): Promise<DynamicSQLResult> {
-    const sysPrompt = `Generate a PostgreSQL SELECT query for the user's request.\n\n${AVAILABLE_TABLES_SCHEMA}\n\nRules:\n- ONLY SELECT statements. Never INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE.\n- ALWAYS include WHERE tenant_id = $1\n- Use proper JOINs, aggregations when needed\n- LIMIT 100 max\n- Return JSON: {"sql": "SELECT ...", "description": "What this query shows"}`;
-    const response = await this.client.responses.create({
-      model: "gpt-5-mini",
-      instructions: sysPrompt,
-      input: `${userIntent}\n\nRespond in json.`,
-      text: { format: { type: "json_object" } },
-      max_output_tokens: 1000,
-      store: false,
-    });
-    const content = response.output_text ?? "";
-    captureLlmDebug("gpt-5-mini", sysPrompt, userIntent, content, response.status);
-    return JSON.parse(content) as DynamicSQLResult;
-  }
-
   async generateActivitySummary(
     activityData: Record<string, unknown>
   ): Promise<ActivitySummary> {
     const sysPrompt = `Generate a display-ready summary for an activity record. Return JSON: {"enhancedTitle":"Professional 5-10 word title","enhancedDescription":"Well-written 1-3 sentence description","highlights":["key point 1"]}. Keep it concise and professional.`;
     const userInput = JSON.stringify(activityData);
+    const startMs = Date.now();
     try {
       const response = await this.client.responses.create({
         model: "gpt-5-nano",
@@ -283,8 +309,10 @@ For activity_card: use snake_case field names matching DB columns.`;
       });
       const content = response.output_text ?? "";
       captureLlmDebug("gpt-5-nano", sysPrompt, userInput, content, response.status);
+      trackCost("gpt-5-nano", "generateActivitySummary", response, startMs, true);
       return JSON.parse(content) as ActivitySummary;
-    } catch {
+    } catch (err) {
+      trackCost("gpt-5-nano", "generateActivitySummary", {}, startMs, false, (err as Error).message);
       return {
         enhancedTitle: (activityData.title as string) ?? "Activity",
         enhancedDescription: (activityData.description as string) ?? "",
@@ -323,147 +351,6 @@ For activity_card: use snake_case field names matching DB columns.`;
     return groups;
   }
 
-  async analyzeQueryContexts(
-    userQuery: string,
-    availableContextIds: string[]
-  ): Promise<ContextAnalysisResult> {
-    const sysPrompt = `Classify a user query and determine relevant data contexts.
-
-Step 1 — Classify queryMode:
-- "data": User wants factual data (counts, lists, filters, search, aggregations). SQL can answer it directly.
-- "intelligence": User wants AI reasoning, insights, ideas, suggestions, analysis, recommendations, or creative output based on their data.
-
-Step 2 — Pick relevant data contexts:
-- my_activities: Activities list — search, filter, count, analyze activities
-- specific_activity: Single activity — details, notes, media for one activity
-- tags_breakdown: Tags — tag usage, distribution, counts per tag
-- activity_timeline: Timeline — trends, patterns, time-based analysis
-- notes_search: Notes — search across activity notes
-
-Return JSON: {"queryMode":"data|intelligence","suggestions":[{"contextId":"...","relevance":0.0-1.0,"reason":"Short explanation"}]}
-Only include contexts from: ${JSON.stringify(availableContextIds)}
-Order by relevance descending. Include 1-3 most relevant.`;
-
-    try {
-      const response = await this.client.responses.create({
-        model: "gpt-5-mini",
-        instructions: sysPrompt,
-        input: `${userQuery}\n\nRespond in json.`,
-        text: { format: { type: "json_object" } },
-        max_output_tokens: 1000,
-        store: false,
-      });
-      const content = response.output_text ?? "";
-      captureLlmDebug("gpt-5-mini", sysPrompt, userQuery, content, response.status);
-      if (!content.trim()) throw new Error("Empty LLM response");
-      const parsed = JSON.parse(content) as ContextAnalysisResult;
-      if (!parsed.queryMode) parsed.queryMode = "data";
-      return parsed;
-    } catch {
-      return {
-        queryMode: "data",
-        suggestions: availableContextIds.map((id) => ({
-          contextId: id,
-          relevance: 0.5,
-          reason: "Default suggestion",
-        })),
-      };
-    }
-  }
-
-  async generateContextualDynamicSQL(
-    userQuery: string,
-    contextBaseSQL: string,
-    contextColumns: string[],
-    contextParamNotes: string,
-    allowedOps: string[]
-  ): Promise<ContextualSQLResult> {
-    const sysPrompt = `Generate a PostgreSQL SELECT query by modifying the base query below to answer the user's question.
-
-BASE QUERY (use as starting point — you may add WHERE, ORDER BY, HAVING, aggregate, LIMIT):
-${contextBaseSQL}
-
-Available columns: ${contextColumns.join(", ")}
-Allowed operations: ${allowedOps.join(", ")}
-Parameter notes: ${contextParamNotes}
-
-Rules:
-- ONLY SELECT. Never INSERT/UPDATE/DELETE/DROP/ALTER.
-- Keep the $1 tenant_id parameter.
-- You may wrap the base query in a CTE or add clauses to it.
-- LIMIT 100 max.
-- Return JSON: {"sql":"SELECT ...","description":"What this shows","outputColumns":["col1","col2"],"suggestedWidgetType":"data_list|chart|stats_card|text_response","chartType":"bar|line|area|pie|donut"}
-- Use "chart" for time-series / aggregates, "stats_card" for single-value counts, "data_list" for row listings, "text_response" for simple answers.
-- If suggestedWidgetType is "chart", also include "chartType": use "line" for time-series, "bar" for categorical comparisons, "pie" for proportions/distributions, "area" for cumulative trends. Omit chartType for non-chart widgets.`;
-
-    try {
-      const response = await this.client.responses.create({
-        model: "gpt-5-mini",
-        instructions: sysPrompt,
-        input: `${userQuery}\n\nRespond in json.`,
-        text: { format: { type: "json_object" } },
-        max_output_tokens: 1000,
-        store: false,
-      });
-      const raw = response.output_text ?? "";
-      captureLlmDebug("gpt-5-mini", sysPrompt, userQuery, raw, response.status);
-      try {
-        return JSON.parse(raw) as ContextualSQLResult;
-      } catch {
-        return JSON.parse(raw.replace(/\n/g, " ").replace(/\r/g, "")) as ContextualSQLResult;
-      }
-    } catch (err) {
-      logger.error("llm.generateContextualDynamicSQL", "LLM failed", { error: (err as Error).message });
-      return {
-        sql: contextBaseSQL + " LIMIT 20",
-        description: "Showing data from the selected context",
-        outputColumns: contextColumns,
-        suggestedWidgetType: "data_list",
-      };
-    }
-  }
-
-  async analyzeDataWithContext(
-    userQuery: string,
-    entityData: Record<string, unknown>,
-    entityType: string,
-    conversationContext: string[]
-  ): Promise<IntelligenceAnalysis> {
-    const contextStr = conversationContext.length > 0
-      ? `\nRecent conversation:\n${conversationContext.slice(-6).join("\n")}`
-      : "";
-
-    const sysPrompt = `You are an intelligent assistant helping a user with their ${entityType} data. The user is asking for insights, analysis, ideas, or recommendations.
-
-Respond in rich markdown. Be specific, actionable, and reference the actual data provided. Use bullet points, bold for emphasis, and headers for sections when appropriate.
-
-At the end, suggest 2-3 natural follow-up questions the user might want to ask.${contextStr}
-
-Return JSON: {"response":"Your markdown response here","followUpSuggestions":["question 1","question 2"]}`;
-
-    const dataStr = JSON.stringify(entityData, null, 2);
-    const userInput = `User question: ${userQuery}\n\nData:\n${dataStr.length > 3000 ? dataStr.slice(0, 3000) + "\n..." : dataStr}`;
-
-    try {
-      const response = await this.client.responses.create({
-        model: "gpt-5-mini",
-        instructions: sysPrompt,
-        input: `${userInput}\n\nRespond in json.`,
-        text: { format: { type: "json_object" } },
-        max_output_tokens: 2000,
-        store: false,
-      });
-      const content = response.output_text ?? "";
-      captureLlmDebug("gpt-5-mini", sysPrompt, userInput, content, response.status);
-      return JSON.parse(content) as IntelligenceAnalysis;
-    } catch (err) {
-      logger.error("llm.analyzeDataWithContext", "LLM failed", { error: (err as Error).message });
-      return {
-        response: "I wasn't able to analyze this data right now. Please try again.",
-        followUpSuggestions: [],
-      };
-    }
-  }
 }
 
 function deriveShortTitle(raw: string): string {

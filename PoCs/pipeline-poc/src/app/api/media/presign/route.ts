@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { generatePresignedUploadUrl } from "@/lib/media/s3";
+import { logger } from "@/lib/logging/logger";
 
 const presignSchema = z.object({
   filename: z.string().min(1),

@@ -20,22 +20,41 @@ export function DebugPanel({ conversationId }: DebugPanelProps) {
   const [expandedTrace, setExpandedTrace] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
 
-  const loadTraces = useCallback(() => {
+  const loadTraces = useCallback(async () => {
     if (!conversationId) {
       setTraces([]);
       return;
     }
     try {
-      const key = `dhoota_debug_${conversationId}`;
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw) as StoredTrace[];
-        setTraces(parsed);
-      } else {
+      const res = await fetch(`/api/chat/conversations/${conversationId}`);
+      if (!res.ok) { setTraces([]); return; }
+      const data = await res.json();
+      const msgs = data.messages ?? [];
+      const parsed: StoredTrace[] = [];
+      for (const msg of msgs) {
+        const meta = msg.metadata ?? msg.response?.debugTrace;
+        const trace = meta?.debugTrace ?? meta;
+        if (trace?.traceId && trace?.steps) {
+          parsed.push({
+            messageId: msg.messageId ?? msg.id ?? "",
+            timestamp: msg.createdAt ?? msg.created_at ?? new Date().toISOString(),
+            trace: trace as PipelineTraceData,
+          });
+        }
+      }
+      setTraces(parsed);
+    } catch {
+      try {
+        const key = `dhoota_debug_${conversationId}`;
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          setTraces(JSON.parse(raw) as StoredTrace[]);
+        } else {
+          setTraces([]);
+        }
+      } catch {
         setTraces([]);
       }
-    } catch {
-      setTraces([]);
     }
   }, [conversationId]);
 

@@ -14,8 +14,11 @@ import {
   Globe,
   Lock,
   Users,
+  Pin,
 } from "lucide-react";
+import type { ContextItem } from "@/components/chat/ContextStrip";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
+import { MediaLightbox, type LightboxImage } from "./MediaLightbox";
 
 interface Props {
   widget: Widget;
@@ -24,6 +27,7 @@ interface Props {
   onConfirm: (optionId: string, params: Record<string, unknown>) => void;
   onQAResponse: (optionId: string, params: Record<string, unknown>, content?: string) => void;
   onCancel: () => void;
+  onPinToContext?: (item: ContextItem) => void;
 }
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -48,7 +52,7 @@ function isImageMime(item: Record<string, unknown>): boolean {
   return mime.startsWith("image/");
 }
 
-export function ActivityCardWidget({ widget, onAction, onConfirm }: Props) {
+export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const d = widget.data;
   const title = (d.title as string) ?? "Untitled Activity";
@@ -178,9 +182,9 @@ export function ActivityCardWidget({ widget, onAction, onConfirm }: Props) {
         )}
 
         {/* Action bar */}
-        {widget.actions && widget.actions.length > 0 && (
+        {(widget.actions?.length || onPinToContext) && (
           <div className="flex gap-1 pt-2 border-t -mx-1">
-            {widget.actions.map((action, i) => {
+            {widget.actions?.map((action, i) => {
               const Icon = iconMap[action.icon];
               const isEdit = action.optionId === "activity.edit";
               return (
@@ -197,6 +201,33 @@ export function ActivityCardWidget({ widget, onAction, onConfirm }: Props) {
                 </button>
               );
             })}
+            {onPinToContext && (
+              <button
+                onClick={() => {
+                  const summaryParts = [
+                    status && `Status: ${status.replace("_", " ")}`,
+                    activityDate && `Date: ${new Date(activityDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`,
+                    location && `Location: ${location}`,
+                    description && `Description: ${description}`,
+                    tags.length > 0 && `Tags: ${tags.map((t) => t.name).join(", ")}`,
+                  ].filter(Boolean);
+                  onPinToContext({
+                    entityType: "activity",
+                    entityId: String(d.id ?? title),
+                    label: title,
+                    summary: summaryParts.join("; "),
+                    viewAction: d.id
+                      ? { optionId: "activity.view", params: { activity_id: String(d.id) } }
+                      : undefined,
+                  });
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-primary transition"
+                title="Pin to context for insights"
+              >
+                <Pin className="h-4 w-4" />
+                Pin
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -246,54 +277,81 @@ function NotesSection({ notes }: { notes: Record<string, unknown>[] }) {
 }
 
 function MediaGrid({ images }: { images: Record<string, unknown>[] }) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const count = images.length;
-  const urls = images.slice(0, 4).map((m) => ({
+
+  const allImages: LightboxImage[] = images.map((m) => ({
     url: resolveMediaUrl(m)!,
     alt: (m.original_filename as string) ?? "media",
   }));
 
-  if (count === 1) {
-    return (
-      <div className="w-full max-h-80 overflow-hidden">
-        <img src={urls[0].url} alt={urls[0].alt} className="w-full h-full object-cover" />
-      </div>
-    );
-  }
+  const urls = allImages.slice(0, 4);
 
-  if (count === 2) {
+  const open = (i: number) => setLightboxIndex(i);
+
+  const gridContent = (() => {
+    if (count === 1) {
+      return (
+        <div className="w-full max-h-80 overflow-hidden cursor-pointer" onClick={() => open(0)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={urls[0].url} alt={urls[0].alt} className="w-full h-full object-cover" />
+        </div>
+      );
+    }
+
+    if (count === 2) {
+      return (
+        <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
+          {urls.map((u, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={u.url} alt={u.alt} className="w-full h-64 object-cover cursor-pointer" onClick={() => open(i)} />
+          ))}
+        </div>
+      );
+    }
+
+    if (count === 3) {
+      return (
+        <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={urls[0].url} alt={urls[0].alt} className="w-full h-64 object-cover row-span-2 cursor-pointer" onClick={() => open(0)} />
+          <div className="flex flex-col gap-0.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={urls[1].url} alt={urls[1].alt} className="w-full h-[calc(50%-1px)] object-cover cursor-pointer" onClick={() => open(1)} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={urls[2].url} alt={urls[2].alt} className="w-full h-[calc(50%-1px)] object-cover cursor-pointer" onClick={() => open(2)} />
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
+      <div className="grid grid-cols-2 grid-rows-2 gap-0.5 max-h-64 overflow-hidden">
         {urls.map((u, i) => (
-          <img key={i} src={u.url} alt={u.alt} className="w-full h-64 object-cover" />
+          <div key={i} className="relative h-32 overflow-hidden cursor-pointer" onClick={() => open(i)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={u.url} alt={u.alt} className="w-full h-full object-cover" />
+            {i === 3 && count > 4 && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <span className="text-white text-lg font-semibold">+{count - 4}</span>
+              </div>
+            )}
+          </div>
         ))}
       </div>
     );
-  }
-
-  if (count === 3) {
-    return (
-      <div className="grid grid-cols-2 gap-0.5 max-h-64 overflow-hidden">
-        <img src={urls[0].url} alt={urls[0].alt} className="w-full h-64 object-cover row-span-2" />
-        <div className="flex flex-col gap-0.5">
-          <img src={urls[1].url} alt={urls[1].alt} className="w-full h-[calc(50%-1px)] object-cover" />
-          <img src={urls[2].url} alt={urls[2].alt} className="w-full h-[calc(50%-1px)] object-cover" />
-        </div>
-      </div>
-    );
-  }
+  })();
 
   return (
-    <div className="grid grid-cols-2 grid-rows-2 gap-0.5 max-h-64 overflow-hidden">
-      {urls.map((u, i) => (
-        <div key={i} className="relative h-32 overflow-hidden">
-          <img src={u.url} alt={u.alt} className="w-full h-full object-cover" />
-          {i === 3 && count > 4 && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <span className="text-white text-lg font-semibold">+{count - 4}</span>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+    <>
+      {gridContent}
+      {lightboxIndex !== null && (
+        <MediaLightbox
+          images={allImages}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </>
   );
 }

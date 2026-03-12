@@ -4,7 +4,8 @@ export type MessageSource =
   | "inline_action"
   | "default_option"
   | "qa_response"
-  | "confirmation";
+  | "confirmation"
+  | "insights";
 
 export interface FileReference {
   s3Key: string;
@@ -36,6 +37,7 @@ export interface WidgetAction {
   label: string;
   icon: string;
   optionId: string;
+  paramKey?: string;
   params?: Record<string, unknown>;
   targetResourceId?: string;
   targetResourceType?: string;
@@ -59,6 +61,7 @@ export interface ChatMessageResponse {
   followUps: OptionReference[];
   defaultOptions: OptionReference[];
   conversationState: ConversationState;
+  traceId?: string;
   debugTrace?: import("@/lib/pipeline/trace").PipelineTraceData;
 }
 

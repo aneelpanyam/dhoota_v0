@@ -11,11 +11,16 @@ export interface OptionDefinition {
   default_priority: number;
   accepts_files: boolean;
   input_schema: Record<string, unknown> | null;
-  response_prompt: string;
+  summary_prompt: string;
   refinement_prompt: string | null;
   follow_up_option_ids: string[];
   is_active: boolean;
   metadata: Record<string, unknown>;
+  tenant_id?: string | null;
+  target_widget: string | null;
+  requires_confirmation: boolean;
+  skip_refinement: boolean;
+  entity_type: string | null;
 }
 
 export interface SqlTemplate {

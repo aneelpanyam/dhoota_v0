@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { logger } from "@/lib/logging/logger";
 
 export async function GET() {
   try {
@@ -17,7 +18,7 @@ export async function GET() {
       .limit(50);
 
     if (error) {
-      console.error("Error fetching conversations:", error);
+      logger.error("api.conversations", "Error fetching conversations", { error: error.message });
       return NextResponse.json({ conversations: [] });
     }
 
@@ -29,7 +30,7 @@ export async function GET() {
         { status: 401 }
       );
     }
-    console.error("Conversations list error:", err);
+    logger.error("api.conversations", "Conversations list error", { error: (err as Error).message });
     return NextResponse.json({ conversations: [] });
   }
 }

@@ -4,11 +4,14 @@ import { useState } from "react";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 import type { WidgetAction } from "@/types/api";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
-import { User, Bot, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
+import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, Bookmark, Sparkles } from "lucide-react";
+import type { ContextItem } from "./ContextStrip";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   isLastMessage?: boolean;
+  isHidden?: boolean;
+  isBookmarked?: boolean;
   onAction: (action: WidgetAction) => void;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onConfirm: (optionId: string, params: Record<string, unknown>) => void;
@@ -18,24 +21,85 @@ interface MessageBubbleProps {
     content?: string
   ) => void;
   onCancel: () => void;
+  onHide?: () => void;
+  onUnhide?: () => void;
+  onPinToContext?: (item: ContextItem) => void;
+  onToggleBookmark?: () => void;
 }
 
 export function MessageBubble({
   message,
   isLastMessage,
+  isHidden,
+  isBookmarked,
   onAction,
   onOptionSelect,
   onConfirm,
   onQAResponse,
   onCancel,
+  onHide,
+  onUnhide,
+  onPinToContext,
+  onToggleBookmark,
 }: MessageBubbleProps) {
   const [showCollapsed, setShowCollapsed] = useState(false);
 
+  const hideToggle = isHidden ? (
+    <button
+      onClick={onUnhide}
+      className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:bg-muted"
+      title="Unhide message"
+    >
+      <Eye className="h-3 w-3 text-muted-foreground" />
+    </button>
+  ) : (
+    <button
+      onClick={onHide}
+      className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:bg-muted"
+      title="Hide message"
+    >
+      <X className="h-3 w-3 text-muted-foreground" />
+    </button>
+  );
+
   if (message.role === "user") {
+    const hasContext = message.contextItems && message.contextItems.length > 0;
     return (
-      <div className="flex items-start gap-3 justify-end">
-        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+      <div className="group/msg flex items-start gap-3 justify-end">
+        <div className="flex items-start gap-1 shrink-0 pt-1">
+          {hideToggle}
+        </div>
+        <div className="max-w-[80%] space-y-0">
+          {hasContext && (
+            <div className="flex items-center gap-1.5 justify-end mb-1.5 flex-wrap">
+              <Sparkles className="h-3 w-3 text-primary/60 shrink-0" />
+              {message.contextItems!.map((item) => {
+                const clickable = !!item.viewAction;
+                const Tag = clickable ? "button" : "span";
+                return (
+                  <Tag
+                    key={item.entityId}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] whitespace-nowrap ${
+                      clickable ? "hover:bg-primary/20 cursor-pointer transition" : ""
+                    }`}
+                    title={item.summary}
+                    onClick={clickable ? () => onAction({
+                      label: `View ${item.label}`,
+                      icon: "Eye",
+                      optionId: item.viewAction!.optionId,
+                      params: item.viewAction!.params,
+                    }) : undefined}
+                  >
+                    <span className="font-medium">{item.entityType}:</span>
+                    <span className="max-w-28 truncate">{item.label}</span>
+                  </Tag>
+                );
+              })}
+            </div>
+          )}
+          <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5">
+            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          </div>
         </div>
         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
           <User className="h-4 w-4 text-primary" />
@@ -51,7 +115,7 @@ export function MessageBubble({
   const hasCollapsed = collapsed && collapsed.length > 0;
 
   return (
-    <div className="flex items-start gap-3">
+    <div className="group/msg flex items-start gap-3">
       <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
         <Bot className="h-4 w-4 text-secondary-foreground" />
       </div>
@@ -87,6 +151,7 @@ export function MessageBubble({
             onConfirm={onConfirm}
             onQAResponse={onQAResponse}
             onCancel={onCancel}
+            onPinToContext={onPinToContext}
           />
         ))}
 
@@ -103,6 +168,8 @@ export function MessageBubble({
             ))}
           </div>
         )}
+
+        {response.traceId && <TraceIdBadge traceId={response.traceId} />}
 
         {isLastMessage &&
           response.followUps.length === 0 &&
@@ -122,7 +189,49 @@ export function MessageBubble({
           </div>
         )}
       </div>
+      <div className="flex items-start gap-0.5 pt-1 shrink-0">
+        {onToggleBookmark && (
+          <button
+            onClick={onToggleBookmark}
+            className={`transition p-1 rounded hover:bg-muted ${
+              isBookmarked
+                ? "text-primary"
+                : "opacity-0 group-hover/msg:opacity-100 text-muted-foreground"
+            }`}
+            title={isBookmarked ? "Remove bookmark" : "Bookmark message"}
+          >
+            <Bookmark className={`h-3 w-3 ${isBookmarked ? "fill-current" : ""}`} />
+          </button>
+        )}
+        {hideToggle}
+      </div>
     </div>
+  );
+}
+
+function TraceIdBadge({ traceId }: { traceId: string }) {
+  const [copied, setCopied] = useState(false);
+  const shortId = traceId.slice(0, 8);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(traceId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="group flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition mt-1"
+      title={`Trace: ${traceId} (click to copy)`}
+    >
+      {copied ? (
+        <Check className="h-2.5 w-2.5" />
+      ) : (
+        <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition" />
+      )}
+      <span className="font-mono">{copied ? "Copied!" : shortId}</span>
+    </button>
   );
 }
 

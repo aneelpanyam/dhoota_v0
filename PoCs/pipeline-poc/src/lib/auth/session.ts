@@ -1,7 +1,12 @@
 import { createServerSupabase, createServiceSupabase } from "@/lib/supabase/server";
+import { isPublicMode, isSuggestionBoxMode, getPublicUserId, getPublicTenantId } from "@/lib/auth/public-mode";
 import type { SessionUser } from "@/types/auth";
 
 export async function getSession(): Promise<SessionUser | null> {
+  if (isPublicMode() || isSuggestionBoxMode()) {
+    return getPublicSession();
+  }
+
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -28,4 +33,19 @@ export async function requireSession(): Promise<SessionUser> {
   const session = await getSession();
   if (!session) throw new Error("UNAUTHORIZED");
   return session;
+}
+
+function getPublicSession(): SessionUser | null {
+  const tenantId = getPublicTenantId();
+  const userId = getPublicUserId();
+
+  if (!tenantId) return null;
+
+  return {
+    id: userId ?? "citizen-anonymous",
+    tenantId,
+    userType: "citizen",
+    email: "",
+    displayName: "Citizen",
+  };
 }

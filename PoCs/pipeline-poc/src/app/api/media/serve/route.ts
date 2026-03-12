@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { generatePresignedReadUrl } from "@/lib/media/s3";
+import { logger } from "@/lib/logging/logger";
 
 export async function GET(request: NextRequest) {
   try {

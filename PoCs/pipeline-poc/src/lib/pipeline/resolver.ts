@@ -1,26 +1,22 @@
 import type { OptionDefinition } from "@/types/options";
-import type { UserContext, ResolvedOption } from "@/types/pipeline";
+import type { ResolvedOption } from "@/types/pipeline";
 import type { SendMessageRequest } from "@/types/api";
-import { getLLMProvider } from "@/lib/llm/factory";
+import type { UserContext } from "@/types/pipeline";
 import { loadOptionDefinitions } from "./loader";
 
 export async function resolveOption(
   request: SendMessageRequest,
   context: UserContext
 ): Promise<ResolvedOption> {
-  if (
-    request.source === "default_option" ||
-    request.source === "follow_up" ||
-    request.source === "inline_action"
-  ) {
-    return resolveDirectOption(request.optionId!, context, request.params);
+  if (request.optionId) {
+    return resolveDirectOption(request.optionId, context, request.params);
   }
 
   if (request.source === "chat" && request.content) {
     return resolveFromText(request.content, context);
   }
 
-  throw new Error("Cannot resolve option: no optionId or content provided");
+  return { type: "predefined", confidence: 0, needsMoreInput: false };
 }
 
 async function resolveDirectOption(
@@ -52,48 +48,47 @@ async function resolveDirectOption(
   };
 }
 
-async function resolveFromText(
+/**
+ * Free text input now only resolves via keyword matching (no LLM).
+ * If no match is found, returns an error (no dynamic query fallback).
+ */
+function resolveFromText(
   text: string,
   context: UserContext
-): Promise<ResolvedOption> {
-  const llm = getLLMProvider();
+): ResolvedOption {
+  const normalized = text.toLowerCase().trim();
 
-  const optionSummaries = context.availableOptions.map((o) => ({
-    id: o.id,
-    name: o.name,
-    description: o.description,
-    keywords: o.keywords,
-    category: o.category,
-  }));
+  let bestMatch: { option: OptionDefinition; score: number } | null = null;
 
-  const conversationContext = context.recentMessages
-    .filter((m) => m.content)
-    .map((m) => `${m.role}: ${m.content}`);
+  for (const option of context.availableOptions) {
+    let score = 0;
 
-  const classification = await llm.classifyIntent(
-    text,
-    optionSummaries,
-    conversationContext
-  );
+    for (const kw of option.keywords) {
+      if (normalized.includes(kw.toLowerCase())) {
+        score += kw.length;
+      }
+    }
 
-  if (classification.optionId && classification.confidence >= 0.5) {
-    const option = context.availableOptions.find(
-      (o) => o.id === classification.optionId
-    );
-    if (option) {
-      const allParams = { ...classification.extractedParams };
-      return {
-        type: "predefined",
-        option,
-        extractedParams: allParams,
-        confidence: classification.confidence,
-        needsMoreInput: hasRequiredMissingParams(option, allParams),
-      };
+    if (normalized.includes(option.name.toLowerCase())) {
+      score += option.name.length * 2;
+    }
+
+    if (score > 0 && (!bestMatch || score > bestMatch.score)) {
+      bestMatch = { option, score };
     }
   }
 
-  // No predefined option matched — generate dynamic SQL
-  return { type: "dynamic", confidence: 0, dynamicSql: undefined };
+  if (bestMatch) {
+    return {
+      type: "predefined",
+      option: bestMatch.option,
+      extractedParams: {},
+      confidence: Math.min(bestMatch.score / 20, 1.0),
+      needsMoreInput: hasRequiredMissingParams(bestMatch.option, {}),
+    };
+  }
+
+  return { type: "predefined", confidence: 0, needsMoreInput: false };
 }
 
 function hasRequiredMissingParams(

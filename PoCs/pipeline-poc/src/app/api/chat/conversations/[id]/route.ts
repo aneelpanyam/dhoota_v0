@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { logger } from "@/lib/logging/logger";
 import { buildUserContext, optionsToReferences } from "@/lib/pipeline/context";
 import type { Widget } from "@/types/api";
 import { generateId } from "@/lib/utils";
@@ -95,7 +96,7 @@ export async function GET(
         { status: 401 }
       );
     }
-    console.error("Load conversation error:", err);
+    logger.error("api.conversations", "Load conversation error", { error: (err as Error).message });
     return NextResponse.json(
       { error: { code: "INTERNAL_ERROR", message: "Failed to load conversation" } },
       { status: 500 }

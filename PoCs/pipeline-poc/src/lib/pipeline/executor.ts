@@ -16,7 +16,8 @@ export function consumeSqlDebug(): SqlCallDebug[] | null {
 export async function executeSqlTemplates(
   optionId: string,
   params: Record<string, unknown>,
-  context: { tenantId: string; userId: string }
+  context: { tenantId: string; userId: string; scopedUserId?: string },
+  userType?: string
 ): Promise<SqlResult[]> {
   const templates = await loadSqlTemplates(optionId);
   if (templates.length === 0) {
@@ -24,11 +25,43 @@ export async function executeSqlTemplates(
     return [];
   }
 
+  if (userType === "citizen") {
+    const hasValidation = templates.some((t) => t.execution_order < 0);
+    if (!hasValidation) {
+      const nonRead = templates.find((t) => t.query_type !== "read");
+      if (nonRead) {
+        throw new Error("Write operations are not permitted for citizen users");
+      }
+    }
+  }
+
+  const validationTemplates = templates.filter((t) => t.execution_order < 0);
+  const executionTemplates = templates.filter((t) => t.execution_order >= 0);
+
   const results: SqlResult[] = [];
   const debugEntries: SqlCallDebug[] = [];
   const db = createServiceSupabase();
 
-  for (const template of templates) {
+  for (const vt of validationTemplates) {
+    const vtParams = mapParams(vt, params, context);
+    const vtResult = await executeRawQuery(vt.sql, vtParams);
+    debugEntries.push({ sql: vt.sql, params: vtParams, rowCount: vtResult.length });
+
+    if (vtResult.length === 0) {
+      throw new Error("Validation failed: invalid credentials or insufficient access");
+    }
+
+    const validated = vtResult[0];
+    if (validated.citizen_id) {
+      params.validated_citizen_id = validated.citizen_id as string;
+    }
+  }
+
+  for (const template of executionTemplates) {
+    if (template.sql.toUpperCase().includes("DELETE FROM")) {
+      throw new Error("Hard deletes are not permitted. Use soft deletes instead.");
+    }
+
     const sqlParams = mapParams(template, params, context);
 
     const { data, error } = await db.rpc("exec_sql", {
@@ -37,6 +70,10 @@ export async function executeSqlTemplates(
     });
 
     if (error) {
+      logger.warn("sql.executor", "RPC exec_sql failed, falling back to raw query", {
+        error: error.message,
+        templateName: template.name,
+      });
       const result = await executeRawQuery(template.sql, sqlParams);
       results.push({
         templateName: template.name,
@@ -61,25 +98,10 @@ export async function executeSqlTemplates(
   return results;
 }
 
-export async function executeDynamicQuery(
-  sql: string,
-  tenantId: string
-): Promise<SqlResult> {
-  validateDynamicSQL(sql);
-
-  const result = await executeRawQuery(sql, [tenantId]);
-  return {
-    templateName: "dynamic_query",
-    rows: result,
-    rowCount: result.length,
-    queryType: "read",
-  };
-}
-
 function mapParams(
   template: SqlTemplate,
   params: Record<string, unknown>,
-  context: { tenantId: string; userId: string }
+  context: { tenantId: string; userId: string; scopedUserId?: string }
 ): unknown[] {
   const mapping = template.param_mapping as Record<string, string>;
   const maxParam = Math.max(
@@ -97,7 +119,12 @@ function mapParams(
 
     if (path.startsWith("context.")) {
       const key = path.replace("context.", "");
-      sqlParams.push(key === "tenantId" ? context.tenantId : key === "userId" ? context.userId : null);
+      const contextMap: Record<string, unknown> = {
+        tenantId: context.tenantId,
+        userId: context.userId,
+        scopedUserId: context.scopedUserId ?? context.userId,
+      };
+      sqlParams.push(contextMap[key] ?? null);
     } else if (path.startsWith("params.")) {
       const key = path.replace("params.", "");
       sqlParams.push(params[key] ?? null);
@@ -139,22 +166,3 @@ async function executeRawQuery(
   return Array.isArray(data) ? data : data ? [data] : [];
 }
 
-function validateDynamicSQL(sql: string): void {
-  const normalized = sql.trim().toUpperCase();
-
-  if (!normalized.startsWith("SELECT")) {
-    throw new Error("Dynamic SQL must be a SELECT statement");
-  }
-
-  const forbidden = [
-    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
-    "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE",
-  ];
-
-  for (const keyword of forbidden) {
-    const regex = new RegExp(`\\b${keyword}\\b`);
-    if (regex.test(normalized)) {
-      throw new Error(`Forbidden keyword in dynamic SQL: ${keyword}`);
-    }
-  }
-}

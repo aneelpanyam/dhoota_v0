@@ -50,11 +50,15 @@ export class PipelineTrace {
   private level: LogLevel;
   private requestMeta: PipelineTraceData["request"];
 
-  constructor(requestMeta: PipelineTraceData["request"]) {
+  constructor(requestMeta: PipelineTraceData["request"], traceId?: string) {
     this.startTime = Date.now();
-    this.traceId = crypto.randomUUID();
+    this.traceId = traceId ?? crypto.randomUUID();
     this.level = getLogLevel();
     this.requestMeta = requestMeta;
+  }
+
+  getTraceId(): string {
+    return this.traceId;
   }
 
   isEnabled(): boolean {

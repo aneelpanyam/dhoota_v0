@@ -13,12 +13,6 @@ export interface RefinementContext {
   refinementPrompt?: string;
 }
 
-export interface FormatContext {
-  userDisplayName: string;
-  responsePrompt: string;
-  followUpOptionIds: string[];
-}
-
 export interface RefinedInput {
   params: Record<string, unknown>;
   suggestions: {
@@ -27,6 +21,32 @@ export interface RefinedInput {
   };
   refinementNotes: string[];
   displaySummary: Record<string, string>;
+}
+
+export interface QuestionItem {
+  questionText: string;
+  questionKey: string;
+  inlineWidget: string | null;
+  widgetConfig: Record<string, unknown>;
+  isRequired?: boolean;
+}
+
+export interface QuestionGroup {
+  keys: string[];
+  questions: QuestionItem[];
+}
+
+export interface ActivitySummary {
+  enhancedTitle: string;
+  enhancedDescription: string;
+  highlights: string[];
+}
+
+// Kept for backward compatibility but no longer used in main pipeline
+export interface FormatContext {
+  userDisplayName: string;
+  responsePrompt: string;
+  followUpOptionIds: string[];
 }
 
 export interface FormattedResponse {
@@ -46,52 +66,12 @@ export interface FormattedResponse {
   followUpOptionIds: string[];
 }
 
-export interface DynamicSQLResult {
-  sql: string;
-  description: string;
-}
-
-export interface ContextAnalysisResult {
-  queryMode: "data" | "intelligence";
-  suggestions: {
-    contextId: string;
-    relevance: number;
-    reason: string;
-  }[];
-}
-
-export interface IntelligenceAnalysis {
-  response: string;
-  followUpSuggestions?: string[];
-}
-
-export interface ContextualSQLResult {
-  sql: string;
-  description: string;
-  outputColumns: string[];
-  suggestedWidgetType: "data_list" | "chart" | "stats_card" | "text_response";
-  chartType?: "bar" | "line" | "area" | "pie" | "donut";
-}
-
-export interface QuestionItem {
-  questionText: string;
-  questionKey: string;
-  inlineWidget: string | null;
-  widgetConfig: Record<string, unknown>;
-  isRequired?: boolean;
-}
-
-export interface QuestionGroup {
-  keys: string[];
-  questions: QuestionItem[];
-}
-
 export interface LLMProvider {
-  classifyIntent(
-    userText: string,
-    availableOptions: OptionSummary[],
-    conversationContext: string[]
-  ): Promise<IntentClassification>;
+  /** Simple chat: system prompt + user message -> text response. Used by insights path. */
+  chat(
+    systemPrompt: string,
+    userMessage: string
+  ): Promise<string>;
 
   extractParams(
     userText: string,
@@ -104,16 +84,6 @@ export interface LLMProvider {
     context: RefinementContext
   ): Promise<RefinedInput>;
 
-  formatResponse(
-    results: unknown,
-    context: FormatContext
-  ): Promise<FormattedResponse>;
-
-  generateDynamicSQL(
-    userIntent: string,
-    tableSchemas: string
-  ): Promise<DynamicSQLResult>;
-
   groupQuestions(
     questions: QuestionItem[],
     knownParams: Record<string, unknown>
@@ -123,29 +93,16 @@ export interface LLMProvider {
     activityData: Record<string, unknown>
   ): Promise<ActivitySummary>;
 
-  analyzeQueryContexts(
-    userQuery: string,
-    availableContextIds: string[]
-  ): Promise<ContextAnalysisResult>;
+  // -- Deprecated methods kept for backward compat during transition --
 
-  generateContextualDynamicSQL(
-    userQuery: string,
-    contextBaseSQL: string,
-    contextColumns: string[],
-    contextParamNotes: string,
-    allowedOps: string[]
-  ): Promise<ContextualSQLResult>;
-
-  analyzeDataWithContext(
-    userQuery: string,
-    entityData: Record<string, unknown>,
-    entityType: string,
+  classifyIntent(
+    userText: string,
+    availableOptions: OptionSummary[],
     conversationContext: string[]
-  ): Promise<IntelligenceAnalysis>;
-}
+  ): Promise<IntentClassification>;
 
-export interface ActivitySummary {
-  enhancedTitle: string;
-  enhancedDescription: string;
-  highlights: string[];
+  formatResponse(
+    results: unknown,
+    context: FormatContext
+  ): Promise<FormattedResponse>;
 }

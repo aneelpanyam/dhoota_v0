@@ -7,13 +7,16 @@ import {
   loadUserConfig,
   loadOptionDefinitions,
 } from "./loader";
+import { isPublicMode, getPublicUserId } from "@/lib/auth/public-mode";
 
 export async function buildUserContext(
   session: SessionUser,
   conversationId: string
 ): Promise<UserContext> {
   const typeConfig = await loadUserTypeConfig(session.userType);
-  const userConfig = await loadUserConfig(session.id);
+  const userConfig = session.userType !== "citizen"
+    ? await loadUserConfig(session.id)
+    : null;
 
   const availableIds =
     userConfig?.available_option_ids ?? typeConfig?.available_option_ids ?? [];
@@ -23,33 +26,84 @@ export async function buildUserContext(
     userConfig?.init_option_ids ?? typeConfig?.init_option_ids ?? [];
 
   const allOptions = await loadOptionDefinitions();
-
   const tenantFlags = await loadTenantFlags(session.tenantId);
+  const tenantOverrides = await loadTenantOptionOverrides(session.tenantId);
 
-  const availableOptions = allOptions.filter(
+  let availableOptions = allOptions.filter(
     (opt) =>
       availableIds.includes(opt.id) &&
       opt.user_types.includes(session.userType) &&
-      opt.required_toggles.every((toggle) => tenantFlags.includes(toggle))
+      opt.required_toggles.every((toggle) => tenantFlags.includes(toggle)) &&
+      (opt.tenant_id === null || opt.tenant_id === undefined || opt.tenant_id === session.tenantId)
   );
+
+  availableOptions = applyTenantOverrides(availableOptions, tenantOverrides);
+
+  if (isPublicMode() && session.userType === "citizen") {
+    const enabledIds = await loadPublicSiteEnabledOptions(session.tenantId, getPublicUserId());
+    if (enabledIds.length > 0) {
+      availableOptions = availableOptions.filter((opt) => enabledIds.includes(opt.id));
+    }
+  }
 
   const defaultOptions = availableOptions.filter((opt) =>
     defaultIds.includes(opt.id)
   );
 
-  const recentMessages = await loadRecentMessages(conversationId);
+  const recentMessages = session.userType === "citizen"
+    ? []
+    : await loadRecentMessages(conversationId);
+
+  const scopedUserId = isPublicMode() ? (getPublicUserId() ?? undefined) : undefined;
 
   return {
     tenantId: session.tenantId,
     userId: session.id,
     userType: session.userType,
     displayName: session.displayName,
+    scopedUserId,
     availableOptions,
     defaultOptions,
     initOptionIds: initIds,
     conversationId,
     recentMessages,
   };
+}
+
+interface TenantOptionOverride {
+  option_id: string;
+  enabled: boolean;
+  name_override: string | null;
+  description_override: string | null;
+  icon_override: string | null;
+  priority_override: number | null;
+}
+
+function applyTenantOverrides(
+  options: OptionDefinition[],
+  overrides: TenantOptionOverride[]
+): OptionDefinition[] {
+  if (overrides.length === 0) return options;
+
+  const overrideMap = new Map(overrides.map((o) => [o.option_id, o]));
+
+  return options
+    .filter((opt) => {
+      const override = overrideMap.get(opt.id);
+      return !override || override.enabled !== false;
+    })
+    .map((opt) => {
+      const override = overrideMap.get(opt.id);
+      if (!override) return opt;
+
+      return {
+        ...opt,
+        name: override.name_override ?? opt.name,
+        description: override.description_override ?? opt.description,
+        icon: override.icon_override ?? opt.icon,
+        default_priority: override.priority_override ?? opt.default_priority,
+      };
+    });
 }
 
 async function loadTenantFlags(tenantId: string): Promise<string[]> {
@@ -61,6 +115,33 @@ async function loadTenantFlags(tenantId: string): Promise<string[]> {
     .eq("enabled", true);
 
   return data?.map((f: { flag_key: string }) => f.flag_key) ?? [];
+}
+
+async function loadTenantOptionOverrides(tenantId: string): Promise<TenantOptionOverride[]> {
+  const db = createServiceSupabase();
+  const { data } = await db
+    .from("tenant_option_overrides")
+    .select("option_id, enabled, name_override, description_override, icon_override, priority_override")
+    .eq("tenant_id", tenantId);
+
+  return (data ?? []) as TenantOptionOverride[];
+}
+
+async function loadPublicSiteEnabledOptions(
+  tenantId: string,
+  userId: string | null
+): Promise<string[]> {
+  if (!userId) return [];
+
+  const db = createServiceSupabase();
+  const { data } = await db
+    .from("public_site_configs")
+    .select("enabled_option_ids")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", userId)
+    .single();
+
+  return (data?.enabled_option_ids as string[]) ?? [];
 }
 
 async function loadRecentMessages(

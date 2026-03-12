@@ -1,16 +1,33 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { DebugPanel } from "./DebugPanel";
-import { Loader2 } from "lucide-react";
+import { WelcomeBanner } from "./WelcomeBanner";
+import { SidePanel } from "./SidePanel";
+import { Loader2, Info } from "lucide-react";
+import type { ContextItem } from "./ContextStrip";
 
 export function ChatContainer() {
   const chat = useChat();
   const initialized = useRef(false);
+  const [sessionContext, setSessionContext] = useState<{
+    publicMode: boolean;
+    publicSiteConfig?: {
+      welcomeMessage: string;
+      sidePanelContent: unknown;
+      themeOverrides: unknown;
+      enabledOptionIds: string[];
+    };
+    conversationContext: string;
+    user: { userType: string; displayName: string } | null;
+    featureFlags?: string[];
+  } | null>(null);
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
 
   useEffect(() => {
     if (!initialized.current) {
@@ -20,30 +37,97 @@ export function ChatContainer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    fetch("/api/session")
+      .then((res) => res.json())
+      .then(setSessionContext)
+      .catch(() => {});
+  }, []);
+
+  const isPublic = sessionContext?.publicMode ?? false;
+  const bookmarksEnabled = sessionContext?.featureFlags?.includes("bookmarks_enabled") ?? false;
+
+  const handlePinToContext = useCallback((item: ContextItem) => {
+    setContextItems((prev) => {
+      if (prev.some((c) => c.entityId === item.entityId)) return prev;
+      return [...prev, item];
+    });
+  }, []);
+
+  const handleRemoveContext = useCallback((entityId: string) => {
+    setContextItems((prev) => prev.filter((c) => c.entityId !== entityId));
+  }, []);
+
+  const handleClearContext = useCallback(() => {
+    setContextItems([]);
+  }, []);
+
   return (
     <div className="flex h-screen w-full bg-background">
-      <ConversationSidebar
-        userDisplayName={chat.userDisplayName}
-        conversations={chat.conversations}
-        activeConversationId={chat.conversationId}
-        onNewConversation={chat.startNewConversation}
-        onSelectConversation={chat.loadConversation}
-      />
+      {!isPublic && (
+        <ConversationSidebar
+          userDisplayName={chat.userDisplayName}
+          conversations={chat.conversations}
+          activeConversationId={chat.conversationId}
+          onNewConversation={chat.startNewConversation}
+          onSelectConversation={chat.loadConversation}
+        />
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-14 border-b flex items-center px-6 pl-14 md:pl-6 shrink-0">
-          <h1 className="text-lg font-semibold">Dhoota</h1>
+        <header
+          className={`h-14 border-b flex items-center shrink-0 ${
+            isPublic ? "px-6" : "px-6 pl-14 md:pl-6"
+          }`}
+        >
+          <h1 className="text-lg font-semibold">
+            {isPublic && sessionContext?.user?.displayName
+              ? sessionContext.user.displayName
+              : "Dhoota"}
+          </h1>
+          {isPublic && (
+            <button
+              onClick={() => setSidePanelOpen((o) => !o)}
+              className="ml-3 p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
+              aria-label="Toggle info panel"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          )}
           {chat.isLoading && (
             <Loader2 className="ml-3 h-4 w-4 animate-spin text-muted-foreground" />
           )}
         </header>
 
+        {/* Welcome banner (public mode) */}
+        {isPublic && sessionContext?.publicSiteConfig?.welcomeMessage && (
+          <div className="px-6 pt-4 shrink-0">
+            <WelcomeBanner
+              message={sessionContext.publicSiteConfig.welcomeMessage}
+              displayName={sessionContext?.user?.displayName}
+            />
+          </div>
+        )}
+
+        {/* Error banner (public mode) */}
+        {isPublic && chat.error && (
+          <div className="mx-6 mt-4 p-3 rounded-lg bg-destructive/15 border border-destructive/30 text-destructive text-sm shrink-0">
+            {chat.error}
+          </div>
+        )}
+
         {/* Messages */}
         <MessageList
           messages={chat.messages}
           isLoading={chat.isLoading}
+          conversationId={chat.conversationId}
+          bookmarksEnabled={bookmarksEnabled}
           onAction={(action) => {
+            if (action.optionId === "_load_conversation" && action.params?.conversationId) {
+              chat.loadConversation(action.params.conversationId as string);
+              return;
+            }
             chat.sendMessage({
               source: "inline_action",
               optionId: action.optionId,
@@ -75,6 +159,7 @@ export function ChatContainer() {
             });
           }}
           onCancel={() => chat.cancelAction()}
+          onPinToContext={handlePinToContext}
         />
 
         {/* Input */}
@@ -86,12 +171,39 @@ export function ChatContainer() {
               files,
             });
           }}
+          onSendInsights={(content, items) => {
+            chat.sendMessage({
+              source: "insights",
+              content,
+              params: { contextItems: items },
+            });
+            handleClearContext();
+          }}
           isLoading={chat.isLoading}
           conversationState={chat.conversationState}
+          isPublicMode={isPublic}
+          contextItems={contextItems}
+          onRemoveContext={handleRemoveContext}
+          onClearContext={handleClearContext}
+          onContextItemClick={(item) => {
+            if (!item.viewAction) return;
+            chat.sendMessage({
+              source: "inline_action",
+              optionId: item.viewAction.optionId,
+              params: item.viewAction.params,
+            });
+          }}
         />
       </div>
 
-      <DebugPanel conversationId={chat.conversationId} />
+      {isPublic && (
+        <SidePanel
+          cards={[]}
+          isOpen={sidePanelOpen}
+          onClose={() => setSidePanelOpen(false)}
+        />
+      )}
+      {!isPublic && <DebugPanel conversationId={chat.conversationId} />}
     </div>
   );
 }

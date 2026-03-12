@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function VerifyForm() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") ?? "";
+  const accessCode = searchParams.get("code") ?? "";
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,14 +19,33 @@ function VerifyForm() {
     setLoading(true);
     setError(null);
 
-    const { error: err } = await supabase.auth.verifyOtp({
+    const { error: otpError } = await supabase.auth.verifyOtp({
       email,
       token,
       type: "email",
     });
 
-    if (err) {
-      setError(err.message);
+    if (otpError) {
+      setError(otpError.message);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/auth/link-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, accessCode }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to link account");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError("Failed to link account. Please try again.");
       setLoading(false);
       return;
     }
