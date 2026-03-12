@@ -22,6 +22,7 @@ export async function processMessage(
   traceId?: string
 ): Promise<ChatMessageResponse> {
   const defaultOpts = optionsToReferences(context.defaultOptions);
+  const execStartMs = Date.now();
   const trace = new PipelineTrace({
     source: request.source,
     optionId: request.optionId,
@@ -135,18 +136,25 @@ export async function processMessage(
       const shouldConfirm = resolved.option.requires_confirmation;
       const shouldRefine = !resolved.option.skip_refinement;
 
+      const prefetchedParams = await prefetchEntityForEdit(
+        resolved.option.id,
+        resolved.extractedParams ?? {},
+      );
+
+      const didPrefetch = resolved.option.id in EDIT_ENTITY_MAP;
+
       let confirmFields: { label: string; value: string; inferred?: boolean }[];
       let confirmParams: Record<string, unknown>;
       let suggestedTags: { name: string; confidence: number }[] = [];
 
-      if (!shouldRefine) {
-        confirmParams = resolved.extractedParams ?? {};
+      if (!shouldRefine || didPrefetch) {
+        confirmParams = prefetchedParams;
         confirmFields = buildSimpleDisplayFields(confirmParams, resolved.option.id);
       } else {
         const refined = await trace.step(
           "refine_input",
-          () => refineInput(resolved.option!, resolved.extractedParams ?? {}, context.tenantId),
-          { params: resolved.extractedParams }
+          () => refineInput(resolved.option!, prefetchedParams, context.tenantId),
+          { params: prefetchedParams }
         );
         trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
         confirmParams = refined.params;
@@ -157,6 +165,8 @@ export async function processMessage(
           inferred: refined.refinementNotes.some((n) => n.toLowerCase().includes(label.toLowerCase())),
         }));
       }
+
+      confirmFields = ensureConfirmFields(confirmFields, confirmParams, resolved.option.id);
 
       if (shouldConfirm) {
         const entityCtxMain = await fetchEntityContext(confirmParams, context.tenantId);
@@ -204,6 +214,7 @@ export async function processMessage(
       { optionId: resolved.option.id, params: resolved.extractedParams }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
+    logOptionExecution(resolved.option.id, context, resolved.extractedParams ?? {}, sqlResults, execStartMs, true);
 
     const formatted = await trace.step(
       "format_response",
@@ -274,6 +285,7 @@ async function handleQAResponse(
   defaultOpts: ReturnType<typeof optionsToReferences>,
   trace: PipelineTrace
 ): Promise<ChatMessageResponse> {
+  const qaStartMs = Date.now();
   const option = context.availableOptions.find((o) => o.id === request.optionId);
   if (!option) {
     return buildErrorResponse("Option not found.", context, defaultOpts);
@@ -343,6 +355,7 @@ async function handleQAResponse(
       { optionId: option.id, params: collectedParams }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
+    logOptionExecution(option.id, context, collectedParams, sqlResults, qaStartMs, true);
 
     const formatted = await trace.step(
       "format_response",
@@ -387,18 +400,21 @@ async function handleQAResponse(
   const shouldRefine = !option.skip_refinement;
   const shouldConfirm = option.requires_confirmation;
 
+  const prefetchedCollected = await prefetchEntityForEdit(option.id, collectedParams);
+  const didPrefetchQA = option.id in EDIT_ENTITY_MAP;
+
   let confirmFields: { label: string; value: string; inferred?: boolean }[];
   let confirmParams: Record<string, unknown>;
   let suggestedTags: { name: string; confidence: number }[] = [];
 
-  if (!shouldRefine) {
-    confirmParams = collectedParams;
+  if (!shouldRefine || didPrefetchQA) {
+    confirmParams = prefetchedCollected;
     confirmFields = buildSimpleDisplayFields(confirmParams, option.id);
   } else {
     const refined = await trace.step(
       "refine_input",
-      () => refineInput(option, collectedParams, context.tenantId),
-      { params: collectedParams }
+      () => refineInput(option, prefetchedCollected, context.tenantId),
+      { params: prefetchedCollected }
     );
     trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
     confirmParams = refined.params;
@@ -409,6 +425,8 @@ async function handleQAResponse(
       inferred: false,
     }));
   }
+
+  confirmFields = ensureConfirmFields(confirmFields, confirmParams, option.id);
 
   if (shouldConfirm) {
     const entityCtxForConfirm = await fetchEntityContext(confirmParams, context.tenantId);
@@ -460,6 +478,7 @@ async function handleConfirmation(
   defaultOpts: ReturnType<typeof optionsToReferences>,
   trace: PipelineTrace
 ): Promise<ChatMessageResponse> {
+  const confirmStartMs = Date.now();
   const option = context.availableOptions.find((o) => o.id === request.optionId);
   if (!option) {
     return buildErrorResponse("Option not found.", context, defaultOpts);
@@ -473,6 +492,7 @@ async function handleConfirmation(
     { optionId: option.id, paramKeys: Object.keys(params) }
   );
   trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
+  logOptionExecution(option.id, context, params, sqlResults, confirmStartMs, true);
 
   const resourceId = extractResourceIdFromParams(params, option)
     ?? extractResourceId(sqlResults);
@@ -590,18 +610,27 @@ function extractResourceId(sqlResults: import("@/types/pipeline").SqlResult[]): 
   return undefined;
 }
 
+function deriveEntityType(option: import("@/types/options").OptionDefinition): string {
+  if (option.entity_type) return option.entity_type;
+  const parts = option.id.split(".");
+  if (["admin", "public", "citizen"].includes(parts[0]) && parts.length >= 2) {
+    return parts[1];
+  }
+  return parts[0];
+}
+
 function extractResourceIdFromParams(
   params: Record<string, unknown>,
   option: import("@/types/options").OptionDefinition
 ): string | undefined {
-  const entityType = option.entity_type ?? option.id.split(".")[0];
+  const entityType = deriveEntityType(option);
   const paramKey = `${entityType}_id`;
   if (params[paramKey]) return String(params[paramKey]);
   return undefined;
 }
 
 function isChildOption(optionId: string): boolean {
-  return /\.(view|edit|delete|add_|remove_|respond|assign|revoke|regenerate)/.test(optionId);
+  return /\.(view|edit|delete|add_|remove_|respond|assign|revoke|regenerate|provision|create|manage|configure|process|list)/.test(optionId);
 }
 
 function buildFollowUps(
@@ -609,7 +638,7 @@ function buildFollowUps(
   context: UserContext,
   resourceId?: string
 ): import("@/types/api").OptionReference[] {
-  const entityType = option.entity_type ?? option.id.split(".")[0];
+  const entityType = deriveEntityType(option);
   const paramKey = `${entityType}_id`;
 
   return option.follow_up_option_ids
@@ -621,7 +650,7 @@ function buildFollowUps(
         name: opt!.name,
         icon: opt!.icon ?? "Zap",
       };
-      if (resourceId && paramKey && isChildOption(opt!.id)) {
+      if (resourceId && paramKey) {
         ref.params = { [paramKey]: resourceId };
       }
       return ref;
@@ -656,7 +685,8 @@ async function saveActivityTags(
 }
 
 const HIDDEN_DISPLAY_KEYS = new Set([
-  "activity_id", "tenant_id", "user_id", "media_keys", "media_file_names",
+  "tenant_id", "user_id", "media_keys", "media_file_names",
+  "offset", "pageSize", "page",
 ]);
 
 function buildSimpleDisplayFields(
@@ -666,11 +696,34 @@ function buildSimpleDisplayFields(
   const fields: { label: string; value: string }[] = [];
   for (const [key, val] of Object.entries(params)) {
     if (HIDDEN_DISPLAY_KEYS.has(key) || val == null) continue;
+    if (Array.isArray(val)) {
+      if (val.length === 0) continue;
+      const display = val.map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+      const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      fields.push({ label, value: display });
+      continue;
+    }
     if (typeof val === "object") continue;
     const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    fields.push({ label, value: String(val) });
+    const strVal = String(val);
+    if (key.endsWith("_id") && /^[0-9a-f]{8}-/i.test(strVal)) {
+      fields.push({ label: label.replace(/ Id$/, ""), value: strVal.slice(0, 8) + "..." });
+    } else if (typeof val === "boolean") {
+      fields.push({ label, value: val ? "Yes" : "No" });
+    } else {
+      fields.push({ label, value: strVal || "(not set)" });
+    }
   }
   return fields;
+}
+
+function ensureConfirmFields(
+  fields: { label: string; value: string; inferred?: boolean }[],
+  params: Record<string, unknown>,
+  optionId: string
+): { label: string; value: string; inferred?: boolean }[] {
+  if (fields.length > 0) return fields;
+  return buildSimpleDisplayFields(params, optionId).map((f) => ({ ...f, inferred: false }));
 }
 
 function attachItemActions(
@@ -768,35 +821,79 @@ async function fetchEntityContext(
   params: Record<string, unknown>,
   tenantId: string
 ): Promise<EntityContext | null> {
-  const activityId = params.activity_id as string | undefined;
-  if (!activityId) return null;
+  try {
+    const db = createServiceSupabase();
+
+    const activityId = params.activity_id as string | undefined;
+    if (activityId) {
+      const { data } = await db
+        .from("activities")
+        .select("id, title, status, activity_date, ai_summary")
+        .eq("id", activityId)
+        .eq("tenant_id", tenantId)
+        .single();
+      if (!data) return null;
+      const summary = data.ai_summary as Record<string, unknown> | null;
+      const title = (summary?.enhancedTitle as string) ?? data.title ?? "Activity";
+      const dateStr = data.activity_date
+        ? new Date(data.activity_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : undefined;
+      return { entityType: "activity", entityId: activityId, title, subtitle: [data.status, dateStr].filter(Boolean).join(" · ") || undefined };
+    }
+
+    const userId = params.user_id as string | undefined;
+    if (userId) {
+      const { data } = await db.from("users").select("id, display_name, email, user_type").eq("id", userId).single();
+      if (data) return { entityType: "user", entityId: userId, title: data.display_name ?? data.email ?? "User", subtitle: `${data.user_type} · ${data.email}` };
+    }
+
+    const resolvedTenantId = params.tenant_id as string | undefined;
+    if (resolvedTenantId) {
+      const { data } = await db.from("tenants").select("id, name, subscription").eq("id", resolvedTenantId).single();
+      if (data) return { entityType: "tenant", entityId: resolvedTenantId, title: data.name ?? "Tenant", subtitle: data.subscription ?? undefined };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const EDIT_ENTITY_MAP: Record<string, { table: string; idParam: string; fields: string }> = {
+  "admin.tenant.edit": { table: "tenants", idParam: "tenant_id", fields: "id, name, subscription, custom_domain, slug" },
+  "admin.user.edit": { table: "users", idParam: "user_id", fields: "id, display_name, email, user_type, access_code" },
+  "admin.subscription.manage": { table: "tenants", idParam: "tenant_id", fields: "id, name, subscription" },
+  "admin.report.process": { table: "report_requests", idParam: "report_id", fields: "id, status, result_url, report_type" },
+};
+
+async function prefetchEntityForEdit(
+  optionId: string,
+  params: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const config = EDIT_ENTITY_MAP[optionId];
+  if (!config) return params;
+
+  const entityId = params[config.idParam] as string | undefined;
+  if (!entityId) return params;
+
+  const nonIdParams = Object.entries(params).filter(([k]) => k !== config.idParam && !k.endsWith("_id"));
+  if (nonIdParams.some(([, v]) => v != null)) return params;
 
   try {
     const db = createServiceSupabase();
-    const { data } = await db
-      .from("activities")
-      .select("id, title, status, activity_date, ai_summary")
-      .eq("id", activityId)
-      .eq("tenant_id", tenantId)
-      .single();
+    const { data } = await db.from(config.table).select(config.fields).eq("id", entityId).single();
+    if (!data) return params;
 
-    if (!data) return null;
-
-    const summary = data.ai_summary as Record<string, unknown> | null;
-    const title = (summary?.enhancedTitle as string) ?? data.title ?? "Activity";
-    const dateStr = data.activity_date
-      ? new Date(data.activity_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-      : undefined;
-    const subtitle = [data.status, dateStr].filter(Boolean).join(" · ");
-
-    return {
-      entityType: "activity",
-      entityId: activityId,
-      title,
-      subtitle: subtitle || undefined,
-    };
+    const merged = { ...params };
+    for (const [key, val] of Object.entries(data as unknown as Record<string, unknown>)) {
+      if (key === "id") continue;
+      if (merged[key] == null) {
+        merged[key] = val ?? "";
+      }
+    }
+    return merged;
   } catch {
-    return null;
+    return params;
   }
 }
 
@@ -842,6 +939,35 @@ async function generateAndStoreAiSummary(
   } catch {
     // Non-critical
   }
+}
+
+function logOptionExecution(
+  optionId: string,
+  context: UserContext,
+  params: Record<string, unknown>,
+  sqlResults: import("@/types/pipeline").SqlResult[],
+  startMs: number,
+  success: boolean,
+  errorMessage?: string
+): void {
+  const db = createServiceSupabase();
+  db.from("option_executions")
+    .insert({
+      tenant_id: context.tenantId,
+      user_id: context.userId,
+      option_id: optionId,
+      conversation_id: context.conversationId,
+      input_params: params,
+      sql_results: sqlResults.map((r) => ({ name: r.templateName, rowCount: r.rowCount })),
+      execution_ms: Math.round(Date.now() - startMs),
+      llm_tokens_used: 0,
+      success,
+      error_message: errorMessage ?? null,
+    })
+    .then(
+      ({ error }) => { if (error) logger.warn("pipeline", `option_executions insert failed: ${error.message}`); },
+      (err) => { logger.warn("pipeline", `option_executions insert failed: ${err}`); }
+    );
 }
 
 function buildErrorResponse(

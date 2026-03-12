@@ -41,6 +41,58 @@ const statusColors: Record<string, string> = {
   in_progress: "bg-yellow-100 text-yellow-700",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-gray-100 text-gray-500",
+  draft: "bg-slate-100 text-slate-600",
+  active: "bg-green-100 text-green-700",
+  inactive: "bg-gray-100 text-gray-500",
+  archived: "bg-gray-100 text-gray-500",
+  requested: "bg-blue-100 text-blue-700",
+  processing: "bg-yellow-100 text-yellow-700",
+  failed: "bg-red-100 text-red-700",
+  new: "bg-blue-100 text-blue-700",
+  reviewed: "bg-green-100 text-green-700",
+  resolved: "bg-green-100 text-green-700",
+  pending: "bg-yellow-100 text-yellow-700",
+  revoked: "bg-red-100 text-red-700",
+  open: "bg-blue-100 text-blue-700",
+  closed: "bg-gray-100 text-gray-500",
+};
+
+const subscriptionColors: Record<string, string> = {
+  free: "bg-gray-100 text-gray-600",
+  basic: "bg-blue-100 text-blue-700",
+  standard: "bg-indigo-100 text-indigo-700",
+  premium: "bg-purple-100 text-purple-700",
+};
+
+const userTypeColors: Record<string, string> = {
+  worker: "bg-emerald-100 text-emerald-700",
+  candidate: "bg-sky-100 text-sky-700",
+  representative: "bg-amber-100 text-amber-700",
+  team_worker: "bg-teal-100 text-teal-700",
+  citizen: "bg-orange-100 text-orange-700",
+  anonymous: "bg-gray-100 text-gray-500",
+  system_admin: "bg-red-100 text-red-700",
+};
+
+function getBadgeColor(key: string, value: string): string {
+  const normalized = value.toLowerCase().replace(/ /g, "_");
+  if (key === "subscription") return subscriptionColors[normalized] ?? "bg-primary/10 text-primary";
+  if (key === "user_type") return userTypeColors[normalized] ?? "bg-primary/10 text-primary";
+  return statusColors[normalized] ?? "bg-primary/10 text-primary";
+}
+
+const COUNT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  user_count: Users,
+  message_count: MessageCircle,
+  suggestion_count: MessageSquarePlus,
+  new_count: Zap,
+  note_count: FileText,
+  member_count: Users,
+  media_count: ImageIcon,
+  activity_count: Calendar,
+  execution_count: Zap,
+  error_count: ShieldOff,
+  call_count: Zap,
 };
 
 function buildContextItem(
@@ -810,13 +862,18 @@ function GenericListItem({
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2">
           {titleCol && item[titleCol.key] != null && (
-            <p className={`font-medium text-sm truncate ${isClickable ? "hover:text-primary transition" : ""}`}>
+            <p className={`font-medium text-sm truncate ${isClickable ? "hover:text-primary transition" : ""} ${item.deleted_at ? "line-through opacity-60" : ""}`}>
               {String(item[titleCol.key])}
             </p>
           )}
           {subtitleCol && item[subtitleCol.key] != null && (
             <span className="text-[11px] text-muted-foreground truncate">
               {String(item[subtitleCol.key])}
+            </span>
+          )}
+          {item.deleted_at && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 shrink-0">
+              deactivated
             </span>
           )}
         </div>
@@ -837,10 +894,23 @@ function GenericListItem({
               );
             }
 
-            if (BADGE_KEYS.has(col.key)) {
+            if (col.key === "user_types" && Array.isArray(value)) {
               return (
-                <span key={col.key} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                  {String(value).replace(/_/g, " ")}
+                <div key={col.key} className="flex gap-1">
+                  {(value as string[]).slice(0, 3).map((ut) => (
+                    <span key={ut} className={`text-[10px] px-1.5 py-0.5 rounded-full ${userTypeColors[ut] ?? "bg-primary/10 text-primary"}`}>
+                      {ut.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              );
+            }
+
+            if (BADGE_KEYS.has(col.key)) {
+              const strVal = String(value);
+              return (
+                <span key={col.key} className={`text-[10px] px-1.5 py-0.5 rounded-full ${getBadgeColor(col.key, strVal)}`}>
+                  {strVal.replace(/_/g, " ")}
                 </span>
               );
             }
@@ -850,6 +920,16 @@ function GenericListItem({
               return (
                 <span key={col.key} className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                   {col.label}: {active ? "Yes" : "No"}
+                </span>
+              );
+            }
+
+            if ((col.key.endsWith("_count") || col.key === "count") && typeof value === "number") {
+              const CountIcon = COUNT_ICONS[col.key];
+              return (
+                <span key={col.key} className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  {CountIcon && <CountIcon className="h-3 w-3" />}
+                  {value} {col.label.toLowerCase()}
                 </span>
               );
             }

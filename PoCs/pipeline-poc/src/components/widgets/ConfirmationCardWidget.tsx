@@ -109,6 +109,12 @@ const SELECT_OPTIONS: Record<string, { label: string; value: string }[]> = {
     { label: "Draft", value: "draft" },
     { label: "Active", value: "active" },
     { label: "Archived", value: "archived" },
+    { label: "Requested", value: "requested" },
+    { label: "Processing", value: "processing" },
+    { label: "Failed", value: "failed" },
+    { label: "New", value: "new" },
+    { label: "Reviewed", value: "reviewed" },
+    { label: "Resolved", value: "resolved" },
   ],
   visibility: [
     { label: "Private", value: "private" },
@@ -118,12 +124,19 @@ const SELECT_OPTIONS: Record<string, { label: string; value: string }[]> = {
   subscription: [
     { label: "Free", value: "free" },
     { label: "Basic", value: "basic" },
+    { label: "Standard", value: "standard" },
     { label: "Premium", value: "premium" },
   ],
   user_type: [
     { label: "Worker", value: "worker" },
     { label: "Candidate", value: "candidate" },
     { label: "Representative", value: "representative" },
+    { label: "Team Worker", value: "team_worker" },
+  ],
+  suggestion_status: [
+    { label: "New", value: "new" },
+    { label: "Reviewed", value: "reviewed" },
+    { label: "Resolved", value: "resolved" },
   ],
   regenerate_access_code: [
     { label: "No", value: "false" },

@@ -31,6 +31,11 @@ interface EntityContextData {
   subtitle?: string;
 }
 
+interface DynamicOption {
+  value: string;
+  label: string;
+}
+
 export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const d = widget.data;
   const questionText = d.questionText as string;
@@ -42,6 +47,29 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const sessionParams = (d.sessionParams as Record<string, unknown>) ?? {};
   const entityContext = d.entityContext as EntityContextData | null | undefined;
 
+  const dynamicSource = widgetConfig.source as string | undefined;
+  const [dynamicOptions, setDynamicOptions] = useState<DynamicOption[]>([]);
+  const [dynamicLoading, setDynamicLoading] = useState(false);
+
+  const isDynamicSelect = !!dynamicSource && (inlineWidget === "select" || !inlineWidget);
+  const effectiveInlineWidget = isDynamicSelect ? "select" : inlineWidget;
+
+  useEffect(() => {
+    if (!dynamicSource) return;
+    let cancelled = false;
+    setDynamicLoading(true);
+    fetch(`/api/options/dynamic-source?source=${encodeURIComponent(dynamicSource)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.options)) {
+          setDynamicOptions(data.options);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDynamicLoading(false); });
+    return () => { cancelled = true; };
+  }, [dynamicSource]);
+
   const [value, setValue] = useState("");
   const [dateValue, setDateValue] = useState(
     new Date().toISOString().split("T")[0]
@@ -52,7 +80,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     const required = (d.isRequired as boolean) ?? true;
     if (defaultVal) return defaultVal;
     if (!required) return "";
-    return options[0] ?? "private";
+    return options[0] ?? "";
   });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,8 +140,9 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
 
   const handleSubmit = () => {
     let answer: unknown;
+    const widget = effectiveInlineWidget;
 
-    switch (inlineWidget) {
+    switch (widget) {
       case "date_picker":
         answer = new Date(dateValue).toISOString();
         break;
@@ -186,7 +215,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         </div>
       </div>
 
-      {inlineWidget === "file_upload" ? (
+      {effectiveInlineWidget === "file_upload" ? (
         <div className="space-y-2">
           <input
             ref={fileInputRef}
@@ -224,30 +253,40 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         </div>
       ) : (
         <div className="flex items-end gap-2">
-          {inlineWidget === "date_picker" ? (
+          {effectiveInlineWidget === "date_picker" ? (
             <input
               type="date"
               value={dateValue}
               onChange={(e) => setDateValue(e.target.value)}
               className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
-          ) : inlineWidget === "select" || inlineWidget === "visibility_select" ? (
-            <select
-              value={selectValue}
-              onChange={(e) => setSelectValue(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {!isRequired && (
-                <option value="">{(widgetConfig.placeholder as string) ?? "Select..."}</option>
-              )}
-              {((widgetConfig.options as string[]) ?? []).map(
-                (opt) => (
-                  <option key={opt} value={opt}>
-                    {opt.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                  </option>
-                )
-              )}
-            </select>
+          ) : effectiveInlineWidget === "select" || effectiveInlineWidget === "visibility_select" ? (
+            dynamicLoading ? (
+              <div className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm text-muted-foreground">
+                Loading options...
+              </div>
+            ) : (
+              <select
+                value={selectValue}
+                onChange={(e) => setSelectValue(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {!isRequired && (
+                  <option value="">{(widgetConfig.placeholder as string) ?? "Select..."}</option>
+                )}
+                {dynamicOptions.length > 0
+                  ? dynamicOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))
+                  : ((widgetConfig.options as string[]) ?? []).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </option>
+                    ))}
+              </select>
+            )
           ) : (
             <input
               type="text"

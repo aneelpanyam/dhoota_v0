@@ -1,4 +1,5 @@
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { logger } from "@/lib/logging/logger";
 
 // ---------------------------------------------------------------------------
 // Model pricing (cost per 1M tokens in USD)
@@ -103,5 +104,8 @@ export function logLlmCall(params: LogLlmCallParams): void {
       output_cost: outputCost,
       total_cost: totalCost,
     })
-    .then(() => {}, () => {});
+    .then(
+      ({ error }) => { if (error) logger.warn("llm", `llm_logs insert failed: ${error.message}`); },
+      (err) => { logger.warn("llm", `llm_logs insert failed: ${err}`); }
+    );
 }
