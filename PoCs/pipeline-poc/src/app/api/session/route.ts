@@ -30,12 +30,25 @@ export async function GET() {
       const userId = getPublicUserId();
       if (tenantId && userId) {
         const db = createServiceSupabase();
-        const { data } = await db
-          .from("public_site_configs")
-          .select("welcome_message, side_panel_content, theme_overrides, enabled_option_ids")
-          .eq("tenant_id", tenantId)
-          .eq("user_id", userId)
-          .single();
+        const [configResult, cardsResult] = await Promise.all([
+          db
+            .from("public_site_configs")
+            .select("welcome_message, side_panel_content, theme_overrides, enabled_option_ids")
+            .eq("tenant_id", tenantId)
+            .eq("user_id", userId)
+            .single(),
+          db
+            .from("info_cards")
+            .select("id, title, content, card_type, icon, display_order")
+            .eq("tenant_id", tenantId)
+            .eq("created_by", userId)
+            .eq("visibility", "public")
+            .is("deleted_at", null)
+            .order("display_order", { ascending: true }),
+        ]);
+
+        const data = configResult.data;
+        const infoCards = cardsResult.data ?? [];
 
         if (data) {
           publicSiteConfig = {
@@ -43,6 +56,7 @@ export async function GET() {
             sidePanelContent: data.side_panel_content,
             themeOverrides: data.theme_overrides,
             enabledOptionIds: data.enabled_option_ids,
+            infoCards,
           };
         }
       }

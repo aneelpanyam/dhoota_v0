@@ -18,6 +18,7 @@ const SPECIALIZED_FORMATTERS: Record<
   "activity.add_note": formatAddNote,
   "activity.add_media": formatAddMedia,
   "view.stats": formatStats,
+  "public.stats": formatStats,
   "tag.manage": formatTagList,
   "tag.create": formatTagCreate,
   "bookmark.list": formatBookmarkList,

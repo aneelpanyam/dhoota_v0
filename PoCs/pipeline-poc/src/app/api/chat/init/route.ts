@@ -59,6 +59,34 @@ export async function POST(request: Request) {
         conversationState: "active",
       };
 
+      const initResults: ChatMessageResponse[] = [];
+      const availableIds = new Set(context.availableOptions.map((o) => o.id));
+      const initIdsToRun = context.initOptionIds.filter((id) => availableIds.has(id));
+
+      if (initIdsToRun.length > 0) {
+        const promises = initIdsToRun.map((optionId) =>
+          processMessage(
+            {
+              conversationId,
+              source: "default_option",
+              optionId,
+              params: { page: 1, pageSize: 5 },
+            },
+            context
+          )
+        );
+
+        const results = await Promise.allSettled(promises);
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            initResults.push(result.value);
+          }
+          if (result.status === "rejected") {
+            logger.warn("api.chatInit", "Init option failed", { error: result.reason?.message ?? String(result.reason) });
+          }
+        }
+      }
+
       const menuMsg: ChatMessageResponse = {
         messageId: generateId(),
         conversationId,
@@ -71,7 +99,7 @@ export async function POST(request: Request) {
       logger.clearTraceId();
       return NextResponse.json({
         conversationId,
-        messages: [welcomeMsg, menuMsg],
+        messages: [welcomeMsg, ...initResults, menuMsg],
         userConfig: {
           userType: "citizen",
           theme: {},

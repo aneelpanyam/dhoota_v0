@@ -21,6 +21,7 @@ export function ChatContainer() {
       sidePanelContent: unknown;
       themeOverrides: unknown;
       enabledOptionIds: string[];
+      infoCards?: { id: string; title: string; content: unknown; card_type: string; icon?: string; display_order: number }[];
     };
     conversationContext: string;
     user: { userType: string; displayName: string } | null;
@@ -232,7 +233,7 @@ export function ChatContainer() {
 
       {isPublic && (
         <SidePanel
-          cards={[]}
+          cards={sessionContext?.publicSiteConfig?.infoCards ?? []}
           isOpen={sidePanelOpen}
           onClose={() => setSidePanelOpen(false)}
         />
