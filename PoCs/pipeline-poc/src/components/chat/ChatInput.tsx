@@ -5,9 +5,17 @@ import { Send, Paperclip, X, Sparkles, Pin } from "lucide-react";
 import type { FileReference, ConversationState } from "@/types/api";
 import { ContextStrip, type ContextItem } from "./ContextStrip";
 
+interface ContextFilter {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+}
+
 interface ChatInputProps {
   onSend: (content: string, files?: FileReference[]) => void;
-  onSendInsights: (content: string, contextItems: ContextItem[]) => void;
+  onSendInsights: (content: string, contextItems: ContextItem[], filter?: { id: string; name: string }) => void;
+  onSendReport?: (filter: { id: string; name: string }) => void;
   isLoading: boolean;
   conversationState: ConversationState;
   isPublicMode?: boolean;
@@ -15,6 +23,10 @@ interface ChatInputProps {
   onRemoveContext: (entityId: string) => void;
   onClearContext: () => void;
   onContextItemClick?: (item: ContextItem) => void;
+  contextFilters?: ContextFilter[];
+  selectedFilter?: { id: string; name: string };
+  onFilterSelect?: (filterId: string) => void;
+  onClearFilter?: () => void;
 }
 
 interface PendingFile {
@@ -27,6 +39,7 @@ interface PendingFile {
 export function ChatInput({
   onSend,
   onSendInsights,
+  onSendReport,
   isLoading,
   conversationState,
   isPublicMode,
@@ -34,6 +47,10 @@ export function ChatInput({
   onRemoveContext,
   onClearContext,
   onContextItemClick,
+  contextFilters,
+  selectedFilter,
+  onFilterSelect,
+  onClearFilter,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -41,14 +58,15 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasContext = contextItems.length > 0;
-  const isInsightsMode = hasContext;
+  const hasFilter = !!selectedFilter;
+  const isInsightsMode = hasContext || hasFilter;
 
   const handleSubmit = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
 
     if (isInsightsMode && trimmed) {
-      onSendInsights(trimmed, contextItems);
+      onSendInsights(trimmed, contextItems, selectedFilter);
       setText("");
       inputRef.current?.focus();
       return;
@@ -67,7 +85,7 @@ export function ChatInput({
     setText("");
     setPendingFiles([]);
     inputRef.current?.focus();
-  }, [text, pendingFiles, onSend, onSendInsights, isInsightsMode, contextItems]);
+  }, [text, pendingFiles, onSend, onSendInsights, isInsightsMode, contextItems, selectedFilter?.id]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -135,7 +153,9 @@ export function ChatInput({
   const showTextInput = isInsightsMode || conversationState !== "active";
 
   const placeholder = isInsightsMode
-    ? `Ask a question about ${contextItems.length} selected item${contextItems.length !== 1 ? "s" : ""}...`
+    ? hasFilter
+      ? `Ask about ${selectedFilter?.name ?? "filter"}...`
+      : `Ask a question about ${contextItems.length} selected item${contextItems.length !== 1 ? "s" : ""}...`
     : conversationState === "awaiting_confirmation"
     ? "Confirm or edit the details above..."
     : conversationState === "awaiting_input"
@@ -150,6 +170,12 @@ export function ChatInput({
         onRemove={onRemoveContext}
         onClearAll={onClearContext}
         onItemClick={onContextItemClick}
+        filters={contextFilters}
+        selectedFilter={selectedFilter}
+        onFilterSelect={onFilterSelect}
+        onClearFilter={onClearFilter}
+        onGenerateReport={onSendReport}
+        isLoading={isLoading}
       />
 
       <div className="p-4">
@@ -239,7 +265,7 @@ export function ChatInput({
                 <Pin className="h-3.5 w-3.5 shrink-0" />
               </div>
               <p className="text-sm text-muted-foreground">
-                Choose an option above, or <span className="font-medium text-foreground/70">pin items</span> from results to ask questions
+                Choose an option above, <span className="font-medium text-foreground/70">select a filter</span>, or pin items from results to ask questions
               </p>
             </div>
           )}

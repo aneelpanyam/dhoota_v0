@@ -11,6 +11,8 @@ import { StatsCardWidget } from "./StatsCardWidget";
 import { MediaGalleryWidget } from "./MediaGalleryWidget";
 import { ConfirmationCardWidget } from "./ConfirmationCardWidget";
 import { QuestionCardWidget } from "./QuestionCardWidget";
+import { QuestionStepperWidget } from "./QuestionStepperWidget";
+import { ReportViewWidget } from "./ReportViewWidget";
 import { DefaultOptionsMenuWidget } from "./DefaultOptionsMenuWidget";
 import { ErrorCardWidget } from "./ErrorCardWidget";
 import { ContextPickerWidget } from "./ContextPickerWidget";
@@ -41,6 +43,8 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   media_gallery: MediaGalleryWidget,
   confirmation_card: ConfirmationCardWidget,
   question_card: QuestionCardWidget,
+  question_stepper: QuestionStepperWidget,
+  report_view: ReportViewWidget,
   default_options_menu: DefaultOptionsMenuWidget,
   error_card: ErrorCardWidget,
   context_picker: ContextPickerWidget,

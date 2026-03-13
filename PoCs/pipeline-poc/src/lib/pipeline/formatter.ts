@@ -13,6 +13,7 @@ const SPECIALIZED_FORMATTERS: Record<
   "activity.view": formatActivityView,
   "activity.create": formatActivityWriteResult,
   "activity.edit": formatActivityWriteResult,
+  "activity.create_bulk": formatActivityCreateBulk,
   "activity.delete": formatActivityDelete,
   "activity.add_note": formatAddNote,
   "activity.add_media": formatAddMedia,
@@ -525,6 +526,38 @@ function formatActivityWriteResult(
   };
 }
 
+function formatActivityCreateBulk(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const writeResult = sqlResults.find((r) => r.queryType === "write");
+  const rows = writeResult?.rows ?? [];
+  if (rows.length === 0) {
+    return {
+      summary: "Activities have been created.",
+      widgets: [{ type: "text_response", data: { text: "The operation completed successfully." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const columns = pickDisplayColumns(rows[0], { includeSensitive: false });
+  return {
+    summary: `${rows.length} activit${rows.length === 1 ? "y" : "ies"} created successfully.`,
+    widgets: [{
+      type: "data_list",
+      data: {
+        items: rows,
+        columns,
+        totalItems: rows.length,
+        page: 1,
+        pageSize: rows.length,
+        viewOptionId: "activity.view",
+        viewParamKey: "activity_id",
+      },
+    }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
 function formatActivityDelete(
   _sqlResults: SqlResult[],
   option: OptionDefinition
@@ -876,9 +909,9 @@ function formatAnalysisTimeline(
   const completionRate = totalActivities > 0
     ? Math.round((totalCompleted / totalActivities) * 100)
     : 0;
-  const peakPeriod = sorted.reduce(
-    (best, r) => (Number(r.activity_count) || 0) > (best.count) ? { period: r.period, count: Number(r.activity_count) || 0 } : best,
-    { period: null as unknown, count: 0 }
+  const peakPeriod = sorted.reduce<{ period: string | null; count: number }>(
+    (best, r) => (Number(r.activity_count) || 0) > best.count ? { period: (r.period as string) ?? null, count: Number(r.activity_count) || 0 } : best,
+    { period: null, count: 0 }
   );
 
   const widgets: FormattedResponse["widgets"] = [];
@@ -1140,13 +1173,30 @@ function formatAdminOptionView(
 
   const questions = questionsResult?.rows ?? [];
   if (questions.length > 0) {
-    const questionItems = questions.map((q) => ({
-      question_text: q.question_text,
-      question_key: q.question_key,
-      is_required: q.is_required ? "Yes" : "No",
-      inline_widget: q.inline_widget ?? "text",
-      question_order: q.question_order,
-    }));
+    const questionItems = questions.map((q) => {
+      const wc = (q.widget_config as Record<string, unknown>) ?? {};
+      const widget = (q.inline_widget as string) ?? "text";
+      let widget_details = "";
+      if (widget === "select" || widget === "visibility_select") {
+        const opts = (wc.options as string[] | undefined) ?? [];
+        widget_details = opts.length > 0 ? opts.join(", ") : (wc.source as string) ? `source: ${wc.source}` : "";
+      } else if (widget === "table") {
+        const cols = (wc.columns as Array<{ key: string; label: string }> | undefined) ?? [];
+        widget_details = cols.map((c) => c.label).join(" | ");
+      } else if (widget === "file_upload") {
+        widget_details = (wc.accept as string) ?? "—";
+      } else if (widget === "date_picker") {
+        widget_details = (wc.defaultToday as boolean) ? "default: today" : "";
+      }
+      return {
+        question_text: q.question_text,
+        question_key: q.question_key,
+        is_required: q.is_required ? "Yes" : "No",
+        inline_widget: widget,
+        widget_details: widget_details || "—",
+        question_order: q.question_order,
+      };
+    });
 
     widgets.push({
       type: "data_list",
@@ -1157,6 +1207,7 @@ function formatAdminOptionView(
           { key: "question_key", label: "Key" },
           { key: "is_required", label: "Required" },
           { key: "inline_widget", label: "Widget" },
+          { key: "widget_details", label: "Options/Config" },
         ],
         totalItems: questionItems.length,
         page: 1,

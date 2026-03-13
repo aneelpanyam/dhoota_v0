@@ -42,8 +42,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const tenantData = user.tenants as { name: string } | { name: string }[] | null;
     const tenantName =
-      (user.tenants as { name: string } | null)?.name ?? "Unknown";
+      (Array.isArray(tenantData) ? tenantData[0] : tenantData)?.name ?? "Unknown";
 
     return NextResponse.json({
       valid: true,

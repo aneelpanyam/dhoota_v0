@@ -97,7 +97,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message, options: [] }, { status: 500 });
     }
 
-    const options = (data ?? []).map((row: Record<string, unknown>) => ({
+    const rows = (data ?? []) as unknown as Record<string, unknown>[];
+    const options = rows.map((row) => ({
       value: String(row[config.valueField] ?? ""),
       label: String(row[config.labelField] ?? ""),
     }));

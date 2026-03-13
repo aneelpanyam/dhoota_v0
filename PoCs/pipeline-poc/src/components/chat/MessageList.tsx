@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "@/lib/hooks/use-chat";
+import type { ChatMessage, PendingRequest } from "@/lib/hooks/use-chat";
 import type { WidgetAction } from "@/types/api";
 import { MessageBubble } from "./MessageBubble";
 import { EyeOff, Eye } from "lucide-react";
@@ -10,6 +10,7 @@ import type { ContextItem } from "./ContextStrip";
 interface MessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  pendingRequest?: PendingRequest | null;
   conversationId?: string | null;
   bookmarksEnabled?: boolean;
   onAction: (action: WidgetAction) => void;
@@ -28,9 +29,18 @@ function getStorageKey(conversationId?: string | null): string {
   return `dhoota:hidden-msgs:${conversationId ?? "default"}`;
 }
 
+function getLoadingMessage(pendingRequest?: PendingRequest | null): string {
+  if (!pendingRequest) return "Thinking...";
+  if (pendingRequest.source === "insights") return "Loading insights...";
+  const optId = pendingRequest.optionId ?? "";
+  if (/\b(create|edit|add|delete|remove)\b/.test(optId)) return "Preparing confirmation...";
+  return "Loading...";
+}
+
 export function MessageList({
   messages,
   isLoading,
+  pendingRequest,
   conversationId,
   bookmarksEnabled,
   onAction,
@@ -198,7 +208,7 @@ export function MessageList({
               <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
               <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" />
             </div>
-            <span>Thinking...</span>
+            <span>{getLoadingMessage(pendingRequest)}</span>
           </div>
         )}
 

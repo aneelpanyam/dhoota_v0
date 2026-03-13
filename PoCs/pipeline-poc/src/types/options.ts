@@ -14,6 +14,7 @@ export interface OptionDefinition {
   summary_prompt: string;
   refinement_prompt: string | null;
   follow_up_option_ids: string[];
+  child_item_option_ids?: string[];  // options that operate on each displayed item; empty = none
   is_active: boolean;
   metadata: Record<string, unknown>;
   tenant_id?: string | null;
@@ -21,6 +22,7 @@ export interface OptionDefinition {
   requires_confirmation: boolean;
   skip_refinement: boolean;
   entity_type: string | null;
+  has_writes?: boolean;
 }
 
 export interface SqlTemplate {
@@ -41,7 +43,11 @@ export type InlineWidgetType =
   | "location_picker"
   | "status_select"
   | "visibility_select"
-  | "color_picker";
+  | "color_picker"
+  | "select"
+  | "multi_select"
+  | "table"
+  | "list";
 
 export interface OptionQuestion {
   id: string;

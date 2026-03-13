@@ -873,11 +873,11 @@ function GenericListItem({
               {String(item[subtitleCol.key])}
             </span>
           )}
-          {item.deleted_at && (
+          {item.deleted_at ? (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 shrink-0">
               deactivated
             </span>
-          )}
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {restCols.map((col) => {
@@ -965,7 +965,7 @@ function GenericListItem({
             <Pin className="h-3.5 w-3.5" />
           </button>
         )}
-        {editOptionId && editParamKey && item.id && viewOptionId && (
+        {editOptionId && editParamKey && item.id != null && viewOptionId ? (
           <button
             onClick={handleEditClick}
             className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
@@ -973,7 +973,7 @@ function GenericListItem({
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
-        )}
+        ) : null}
         <ItemActions actions={actions} item={item} onAction={onAction} onEdit={onEdit} />
       </div>
     </div>

@@ -40,7 +40,8 @@ Each row is one operation the user can perform.
 | `accepts_files` | boolean | Whether file upload is allowed |
 | `input_schema` | jsonb | JSON Schema defining accepted parameters |
 | `summary_prompt` | text | LLM prompt for formatting the response |
-| `follow_up_option_ids` | text[] | Options shown as buttons after execution |
+| `follow_up_option_ids` | text[] | Options shown as buttons after execution (list-level) |
+| `child_item_option_ids` | text[] | Options that operate on each displayed item (per-item action icons). Empty = none. Separate from list-level follow-ups. |
 | `is_active` | boolean | Soft toggle |
 | `target_widget` | text | Default widget type: `data_list`, `activity_card`, `stats_card`, etc. |
 | `entity_type` | text | The entity this operates on: `activity`, `user`, `tenant`, etc. |
@@ -111,7 +112,7 @@ User Message → Resolve → QA → Refine → Execute SQL → Format → Attach
 
 5. **Format** (`formatter.ts`): Convert SQL results into widgets. Specialized formatters for complex views, generic formatter for standard CRUD.
 
-6. **Attach Actions** (`index.ts`): Add per-item action buttons (edit, delete, etc.) to list widgets based on `follow_up_option_ids`.
+6. **Attach Actions** (`index.ts`): Add per-item action buttons to list/card widgets based on `child_item_option_ids` (or fallback: filtered `follow_up_option_ids`).
 
 7. **Build Follow-ups** (`index.ts`): Convert `follow_up_option_ids` into clickable buttons shown below the response.
 
@@ -177,7 +178,7 @@ Options use dot-namespaced IDs: `{category}.{action}`
 3. After an **edit** → show view and list
 4. After a **delete** → show list and create
 5. After a **list** → show create and filters
-6. Child options (`.edit`, `.delete`, `.add_note`, etc.) are also used by `attachItemActions` to add per-row action buttons in `data_list` widgets.
+6. **`child_item_option_ids`** defines per-item action icons (e.g. add_note, add_media). When set, these appear on each list item or activity card. When empty, no child actions are shown. `follow_up_option_ids` remains for list-level buttons.
 
 ### Adding a New Option
 

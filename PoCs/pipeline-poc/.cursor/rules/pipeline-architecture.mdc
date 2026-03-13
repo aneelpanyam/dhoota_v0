@@ -29,7 +29,7 @@ alwaysApply: false
 
 ### Database Tables
 
-- **`option_definitions`**: Each row defines one operation (e.g. `activity.create`, `admin.option.view`). Key columns: `id`, `name`, `category`, `user_types`, `follow_up_option_ids` (text[]), `entity_type`, `target_widget`, `input_schema`, `skip_refinement`, `requires_confirmation`
+- **`option_definitions`**: Each row defines one operation (e.g. `activity.create`, `admin.option.view`). Key columns: `id`, `name`, `category`, `user_types`, `follow_up_option_ids` (text[]), `child_item_option_ids` (text[]), `entity_type`, `target_widget`, `input_schema`, `skip_refinement`, `requires_confirmation`
 - **`sql_templates`**: SQL queries tied to an option via `option_id`. Executed in `execution_order`. `param_mapping` maps `$1`, `$2` etc. to `params.xxx` or `context.xxx`. `query_type` is `read` or `write`.
 - **`option_questions`**: Questions to collect params. `question_key` maps to a param name. `inline_widget` controls the input type (text, select, date_picker, etc.). `is_required` / `groupable` control flow.
 
@@ -51,7 +51,7 @@ alwaysApply: false
 ### Formatter Output → Widget Pipeline
 
 1. Formatter returns `FormattedResponse` with raw widget specs
-2. `attachItemActions()` adds `actions[]` to `data_list` and `activity_card` widgets based on follow-up options that match `isChildOption()` pattern (view/edit/delete/configure/etc.)
+2. `attachItemActions()` adds `actions[]` to `data_list` and `activity_card` widgets based on `child_item_option_ids` (or fallback: filtered `follow_up_option_ids` via `isChildOption()`)
 3. `filterEmptyWidgets()` removes widgets with no data
 4. Each widget gets a unique `id` and becomes a typed `Widget`
 5. `buildFollowUps()` creates clickable follow-up buttons from `follow_up_option_ids`
@@ -63,7 +63,7 @@ alwaysApply: false
 
 ## `attachItemActions` Logic
 
-Takes `follow_up_option_ids`, filters to "child" options (matching `.view`, `.edit`, `.configure`, `.list`, etc.), excludes `.view`/`.details`/`.edit` (those become the list item's click handler via `viewOptionId`/`editOptionId`), and attaches the rest as icon-button actions on each list item. The icon comes from the option's `icon` field — **must exist in the frontend `iconMap`** or falls back to Zap.
+Uses `child_item_option_ids` when non-empty; otherwise falls back to filtering `follow_up_option_ids` (excludes `.view`/`.details`/`.edit` which become the list item's click handler). Attaches the resulting options as icon-button actions on each list item or activity card. The icon comes from the option's `icon` field — **must exist in the frontend `iconMap`** or falls back to Zap.
 
 ## `buildFollowUps` Logic
 

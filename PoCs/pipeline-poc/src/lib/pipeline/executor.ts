@@ -156,12 +156,16 @@ async function executeRawQuery(
   let processedSql = sql;
   for (let i = params.length; i >= 1; i--) {
     const val = params[i - 1];
-    const replacement =
-      val === null
-        ? "NULL"
-        : typeof val === "number"
-        ? String(val)
-        : `'${String(val).replace(/'/g, "''")}'`;
+    let replacement: string;
+    if (val === null) {
+      replacement = "NULL";
+    } else if (typeof val === "number") {
+      replacement = String(val);
+    } else if (typeof val === "object") {
+      replacement = `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+    } else {
+      replacement = `'${String(val).replace(/'/g, "''")}'`;
+    }
     processedSql = processedSql.replace(new RegExp(`\\$${i}`, "g"), replacement);
   }
 

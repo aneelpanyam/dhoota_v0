@@ -13,7 +13,7 @@ import { consumeLlmDebug } from "@/lib/llm/openai";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { PipelineTrace } from "./trace";
 import { logger } from "@/lib/logging/logger";
-import { handleInsightsQuery } from "./insights";
+import { handleInsightsQuery, handleReportQuery } from "./insights";
 import { setLlmLogContext, clearLlmLogContext } from "@/lib/llm/cost";
 
 export async function processMessage(
@@ -39,11 +39,21 @@ export async function processMessage(
   });
 
   try {
-    // Insights path: user sent a question with pinned context items
-    if (request.source === "insights" && request.content && request.params?.contextItems) {
-      const result = await handleInsightsQuery(request, context, defaultOpts, trace);
-      result.debugTrace = trace.toJSON();
-      return result;
+    // Insights path: user sent a question with pinned context items or a filter
+    const hasContextItems = Array.isArray(request.params?.contextItems) && request.params.contextItems.length > 0;
+    const hasFilterId = !!request.params?.filterId;
+    const reportRequest = !!request.params?.reportRequest;
+    if (request.source === "insights" && (hasContextItems || hasFilterId)) {
+      if (reportRequest && hasFilterId) {
+        const result = await handleReportQuery(request, context, defaultOpts, trace);
+        result.debugTrace = trace.toJSON();
+        return result;
+      }
+      if (request.content) {
+        const result = await handleInsightsQuery(request, context, defaultOpts, trace);
+        result.debugTrace = trace.toJSON();
+        return result;
+      }
     }
 
     if (request.source === "qa_response" && request.optionId && request.params) {
@@ -91,22 +101,6 @@ export async function processMessage(
     if (qaResult.status === "need_more" && qaResult.nextQuestions) {
       const entityCtx = await fetchEntityContext(resolved.extractedParams ?? {}, context.tenantId);
 
-      const questionWidgets: Widget[] = qaResult.nextQuestions.map((q) => ({
-        id: generateId(),
-        type: "question_card" as WidgetType,
-        data: {
-          questionText: q.questionText,
-          questionKey: q.questionKey,
-          inlineWidget: q.inlineWidget,
-          widgetConfig: q.widgetConfig ?? {},
-          isRequired: q.isRequired ?? true,
-          optionId: resolved.option!.id,
-          sessionParams: resolved.extractedParams ?? {},
-          entityContext: entityCtx,
-        },
-        bookmarkable: false,
-      }));
-
       const widgets: Widget[] = [];
       if (entityCtx) {
         widgets.push({
@@ -116,7 +110,17 @@ export async function processMessage(
           bookmarkable: false,
         });
       }
-      widgets.push(...questionWidgets);
+      widgets.push({
+        id: generateId(),
+        type: "question_stepper" as WidgetType,
+        data: {
+          optionId: resolved.option!.id,
+          questions: qaResult.nextQuestions,
+          sessionParams: resolved.extractedParams ?? {},
+          entityContext: entityCtx,
+        },
+        bookmarkable: false,
+      });
 
       return {
         messageId: generateId(),
@@ -131,8 +135,7 @@ export async function processMessage(
 
     resolved.extractedParams = qaResult.collectedParams ?? resolved.extractedParams;
 
-    const templates = await loadSqlTemplates(resolved.option.id);
-    const hasWrites = templates.some((t) => t.query_type === "write");
+    const hasWrites = resolved.option.has_writes ?? (await loadSqlTemplates(resolved.option.id)).some((t) => t.query_type === "write");
 
     if (hasWrites && request.source !== "confirmation") {
       const shouldConfirm = resolved.option.requires_confirmation;
@@ -320,21 +323,17 @@ async function handleQAResponse(
     const collectedSoFar = qaResult.collectedParams ?? previousParams;
     const entityCtx = await fetchEntityContext(collectedSoFar, context.tenantId);
 
-    const widgets: Widget[] = qaResult.nextQuestions.map((q) => ({
+    const widgets: Widget[] = [{
       id: generateId(),
-      type: "question_card" as WidgetType,
+      type: "question_stepper" as WidgetType,
       data: {
-        questionText: q.questionText,
-        questionKey: q.questionKey,
-        inlineWidget: q.inlineWidget,
-        widgetConfig: q.widgetConfig ?? {},
-        isRequired: q.isRequired ?? true,
         optionId: option.id,
+        questions: qaResult.nextQuestions,
         sessionParams: collectedSoFar,
         entityContext: entityCtx,
       },
       bookmarkable: false,
-    }));
+    }];
 
     return {
       messageId: generateId(),
@@ -346,8 +345,7 @@ async function handleQAResponse(
     };
   }
 
-  const templates = await loadSqlTemplates(option.id);
-  const hasWrites = templates.some((t) => t.query_type === "write");
+  const hasWrites = option.has_writes ?? (await loadSqlTemplates(option.id)).some((t) => t.query_type === "write");
   const collectedParams = qaResult.collectedParams ?? {};
 
   if (!hasWrites) {
@@ -508,7 +506,39 @@ async function handleConfirmation(
   }
 
   let savedMediaFiles: FileReference[] = [];
-  if (params.media_keys && Array.isArray(params.media_keys) && resourceId) {
+  if (option.id === "activity.create_bulk") {
+    const activities = (params.activities ?? []) as Array<Record<string, unknown>>;
+    const createdRows = sqlResults[0]?.rows ?? [];
+    for (let i = 0; i < createdRows.length; i++) {
+      const row = createdRows[i] as Record<string, unknown>;
+      const activityId = row?.id as string | undefined;
+      const mediaKeys = activities[i]?.media_keys;
+      if (activityId && Array.isArray(mediaKeys) && mediaKeys.length > 0) {
+        const files = mediaKeys.filter(
+          (f): f is FileReference => {
+            if (f == null || typeof f !== "object") return false;
+            const obj = f as Record<string, unknown>;
+            return "s3Key" in obj || "s3_key" in obj;
+          }
+        ).map((f) => {
+          const obj = f as unknown as Record<string, unknown>;
+          return {
+            s3Key: (obj.s3Key ?? obj.s3_key) as string,
+            originalFilename: (obj.originalFilename ?? obj.original_filename) as string,
+            mimeType: (obj.mimeType ?? obj.mime_type) as string,
+            fileSizeBytes: (obj.fileSizeBytes ?? obj.file_size_bytes ?? 0) as number,
+          };
+        });
+        if (files.length > 0) {
+          await trace.step(
+            "save_media",
+            () => saveActivityMedia(activityId, files, context.tenantId, context.userId),
+            { fileCount: files.length, activityId }
+          );
+        }
+      }
+    }
+  } else if (params.media_keys && Array.isArray(params.media_keys) && resourceId) {
     const files = params.media_keys.filter(
       (f): f is FileReference => {
         if (f == null || typeof f !== "object") return false;
@@ -534,7 +564,7 @@ async function handleConfirmation(
     }
   }
 
-  if (resourceId && option.entity_type) {
+  if (resourceId && option.entity_type && option.id !== "activity.create_bulk") {
     const summaryOptions = new Set(["activity.create", "activity.edit", "announcement.create", "announcement.edit", "info_card.create", "info_card.edit", "program.create", "program.edit"]);
     if (summaryOptions.has(option.id)) {
       await trace.step(
@@ -738,8 +768,15 @@ function attachItemActions(
   const entityType = option.entity_type ?? option.id.split(".")[0];
   const paramKey = `${entityType}_id`;
 
-  const itemActions: import("@/types/api").WidgetAction[] = option.follow_up_option_ids
-    .filter((id) => isChildOption(id) && !/\.(view|details|edit)$/.test(id))
+  const childIds = option.child_item_option_ids;
+  const idsToUse =
+    Array.isArray(childIds) && childIds.length > 0
+      ? childIds
+      : option.follow_up_option_ids.filter(
+          (id) => isChildOption(id) && !/\.(view|details|edit)$/.test(id)
+        );
+
+  const itemActions: import("@/types/api").WidgetAction[] = idsToUse
     .map((id) => context.availableOptions.find((o) => o.id === id))
     .filter(Boolean)
     .map((opt) => ({
@@ -853,6 +890,24 @@ async function fetchEntityContext(
     if (resolvedTenantId) {
       const { data } = await db.from("tenants").select("id, name, subscription").eq("id", resolvedTenantId).single();
       if (data) return { entityType: "tenant", entityId: resolvedTenantId, title: data.name ?? "Tenant", subtitle: data.subscription ?? undefined };
+    }
+
+    const announcementId = params.announcement_id as string | undefined;
+    if (announcementId) {
+      const { data } = await db.from("announcements").select("id, title").eq("id", announcementId).eq("tenant_id", tenantId).single();
+      if (data) return { entityType: "announcement", entityId: announcementId, title: data.title ?? "Announcement" };
+    }
+
+    const infoCardId = params.info_card_id as string | undefined;
+    if (infoCardId) {
+      const { data } = await db.from("info_cards").select("id, title").eq("id", infoCardId).eq("tenant_id", tenantId).single();
+      if (data) return { entityType: "info_card", entityId: infoCardId, title: data.title ?? "Info Card" };
+    }
+
+    const programId = params.program_id as string | undefined;
+    if (programId) {
+      const { data } = await db.from("programs").select("id, title").eq("id", programId).eq("tenant_id", tenantId).single();
+      if (data) return { entityType: "program", entityId: programId, title: data.title ?? "Program" };
     }
 
     return null;

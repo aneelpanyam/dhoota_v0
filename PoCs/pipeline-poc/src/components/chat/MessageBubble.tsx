@@ -157,15 +157,58 @@ export function MessageBubble({
 
         {response.followUps.length > 0 && (
           <div className="flex flex-wrap gap-2 pt-1">
-            {response.followUps.map((fu) => (
-              <button
-                key={fu.optionId}
-                onClick={() => onOptionSelect(fu.optionId, fu.params)}
-                className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
-              >
-                {fu.name}
-              </button>
-            ))}
+            {response.followUps.map((fu) => {
+              // For entity edits (e.g. Edit), pass context from widgets so it shows above the user message (like pinned queries)
+              const activityId = fu.params?.activity_id as string | undefined;
+              const activityCard = activityId
+                ? response.widgets?.find(
+                    (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
+                  )?.data
+                : undefined;
+              const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
+              const contextItems = activityCard?.title
+                ? [
+                    {
+                      entityType: "activity",
+                      entityId: (activityCard.id as string) ?? activityId!,
+                      label: (activityCard.title as string) ?? "Activity",
+                      summary:
+                        [activityCard.status, activityDate].filter(Boolean).length > 0
+                          ? [
+                              activityCard.status,
+                              activityDate
+                                ? new Date(activityDate as string).toLocaleDateString("en-IN", {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : "",
+                      viewAction: {
+                        optionId: "activity.view",
+                        params: { activity_id: (activityCard.id as string) ?? activityId! },
+                      },
+                    },
+                  ]
+                : undefined;
+              return (
+                <button
+                  key={fu.optionId}
+                  onClick={() =>
+                    onOptionSelect(fu.optionId, {
+                      ...fu.params,
+                      ...(contextItems && { __contextItems: contextItems }),
+                    })
+                  }
+                  className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
+                >
+                  {fu.name}
+                </button>
+              );
+            })}
           </div>
         )}
 

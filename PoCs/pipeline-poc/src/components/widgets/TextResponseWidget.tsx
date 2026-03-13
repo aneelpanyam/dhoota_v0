@@ -3,6 +3,14 @@
 import Markdown from "react-markdown";
 import type { Widget, WidgetAction } from "@/types/api";
 
+interface RelatedItem {
+  entityType: string;
+  entityId: string;
+  label: string;
+  summary: string;
+  viewAction?: { optionId: string; params: Record<string, unknown> };
+}
+
 interface Props {
   widget: Widget;
   onAction: (action: WidgetAction) => void;
@@ -12,12 +20,14 @@ interface Props {
   onCancel: () => void;
 }
 
-export function TextResponseWidget({ widget }: Props) {
+export function TextResponseWidget({ widget, onOptionSelect }: Props) {
   const text = (widget.data.text as string) ?? "";
+  const relatedItems = (widget.data.relatedItems as RelatedItem[] | undefined) ?? [];
 
   return (
-    <div className="text-sm text-foreground leading-relaxed prose prose-sm prose-neutral dark:prose-invert max-w-none">
-      <Markdown
+    <div className="space-y-3">
+      <div className="text-sm text-foreground leading-relaxed prose prose-sm prose-neutral dark:prose-invert max-w-none">
+        <Markdown
         components={{
           p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
@@ -45,6 +55,29 @@ export function TextResponseWidget({ widget }: Props) {
       >
         {text}
       </Markdown>
+      </div>
+      {relatedItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t">
+          <span className="text-xs text-muted-foreground mr-1">View:</span>
+          {relatedItems.map((item) => {
+            const clickable = !!item.viewAction && !!onOptionSelect;
+            return (
+              <button
+                key={item.entityId}
+                onClick={clickable ? () => onOptionSelect(item.viewAction!.optionId, item.viewAction!.params) : undefined}
+                className={`px-2 py-0.5 rounded-full text-[11px] whitespace-nowrap ${
+                  clickable
+                    ? "bg-primary/10 text-primary hover:bg-primary/20 transition cursor-pointer"
+                    : "bg-muted text-muted-foreground cursor-default"
+                }`}
+                title={item.summary}
+              >
+                {item.entityType}: {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

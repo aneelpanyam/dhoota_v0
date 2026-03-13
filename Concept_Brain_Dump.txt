@@ -1,0 +1,63 @@
+Prototype for a simple Q&A driven productivity app like Notion.
+
+User chooses to add an entry. when they do that, they first see a set of options (through tags) to filter the details they want to capture - based on that, they get a set of pre_configured questions they would answer (and they can choose to have AI ask more questions if the user wants to gather more details). Questions can be of different type - table, collections (list), date, email, short text, long text, boolean, single or multi-select, multi-file uploads etc., 
+They can either see one question after another or all questions at once - if they choose one after another, then they see the number of questions remaining.
+
+Creates or Updates, creates \ updates AI summaries for the entries, 
+
+App allows to manage the entries - bookmark, tagging, adding notes, adding annotations etc., - both individually or a group of entries.
+
+Reads can be either straight forward reads or can be AI driven insights - reads are performed on pre_configured filters and AI insights can be applied on the results of those filters.
+
+System will have a catalog of questions - which again can be maanaged - tagging bookmarking, annotating, notes etc.,   
+
+System will have a catalog of tags - and user can always add more. A tag is also an entry and can have questions that the creator will fill about the tag - tags can't be tagged - that's the only rule. Tags can be of a pre-defined types \ category - Questions, Entries and any other future entities we may add.
+
+The admin side of the equation is that the admin will provision subscription for the users and each user will have their own tenants - and the user can add other users to their tenant - the receiving user can choose to accept. 
+
+User can choose the tenant to which they want to add the tasks to.
+
+The interface will be like WhatsApp where each entry tag type will become a channel, and there will be a home \ feed page which can be universal. Each channel will have an admin option to manage the questions for that tag type, and the tags for the questions.
+
+User should have an option to manage the entry type tags, and question type tags, as well as the questions for the different tag type.
+
+There will be pre_defined filters for the Entries. And like we said above, user can use the filter to both perform the reads as well as to perform custom queries to gather AI insights on the data returned from the filters. 
+
+We will have pre_defined components to render the entries, collection of entries, questions, tags - you should consider the book marking, notes, media and tags. 
+
+For rendering of edits and creates, like we said before it will follow the Q&A model.
+
+For managing the entries (tagging, bookmarking, notes, adding media, filtering etc.,), will be enabled at all entities that support these. 
+
+Whereever we show collection of entries, it should give option for user to view the entries as a list or calendar and should also allow sorting, grouping, filtering and server side pagination.
+
+
+We will use Supabase as the DB, AWS S3 for file storage, Cloudwatch for logging, Supabase realtime for realtime features, Supabase SMTP integration for emails.
+
+Authentication will be based on an Access Code and Email OTP. Registration will be admin driven - provision user, assign access code and invite. they get a signup mail, where they signup with the Access Code and OTP.
+
+The root user should be provisioned from back-end migration scripts.
+
+Users should be able to see the tenants they have access to and their own tenant.
+
+When they invite others to their tenant, they assign permissions - admin (full control of all entries marked as "shared") or collaborator (permission to manage entries - notes and media of entries marked as "shared") or viewer (permission to only view others entries and they can add their own entries).
+
+We can defer the cross tenant user collaboration to future.
+
+System admin should have the ability to manage feature flags for the tenants - the different actions (CRUD, Manage actions) that can be performed on an entry, collection of entries, questions, tags should all be manageable by feature flags. 
+
+Let's see if we can use the same UI for both admin and tenant user - as anyway the system will know what the user type is based on the login.
+
+One user can belong to one tenant only. System admins can belong to root tenant and one additional tenant.
+
+The system should be fully observable for admins \ devs to debug any user issues - so assign trace_id for every user session or may be for each channel.
+
+The AI interactions (to create a summary for every entry, to create a summary for a filter, and to create insights based on user query on top of a filter) are all managed through prompts that can be managed indepdently from code.
+
+Filters can be on entries or tags or questions or tenants (and users) for admins.
+
+Filters will store parameterized SQL that will be used to fetch the data in pre_defined shapes.
+
+Every result rendering should be rich, clickable \ traceable to associated entities.
+
+Is that clear? 

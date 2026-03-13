@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
-import { Send, X, Upload, FileIcon, FileText } from "lucide-react";
+import { Send, X, Upload, FileIcon, FileText, Plus, Trash2 } from "lucide-react";
 
 interface PendingFile {
   file: File;
@@ -85,6 +85,23 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  type TableColumn = {
+    key: string;
+    label: string;
+    required?: boolean;
+    type?: string;
+    accept?: string;
+    multiple?: boolean;
+    options?: Array<{ value: string; label: string }> | string[];
+  };
+  const columns = (widgetConfig.columns as TableColumn[]) ?? [];
+  const [tableRows, setTableRows] = useState<Record<string, unknown>[]>(() =>
+    columns.length > 0
+      ? [Object.fromEntries(columns.map((c) => [c.key, c.type === "file_upload" ? [] : ""]))]
+      : []
+  );
+  const [listItems, setListItems] = useState<string[]>([""]);
+
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -162,6 +179,28 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         answer = fileRefs.length > 0 ? fileRefs : null;
         break;
       }
+      case "table": {
+        const valid = tableRows.filter((row) => {
+          const hasAny = columns.some((c) => {
+            const v = row[c.key];
+            if (c.type === "file_upload") return Array.isArray(v) && v.length > 0;
+            return String(v ?? "").trim();
+          });
+          if (!hasAny) return false;
+          return columns.filter((c) => c.required).every((c) => {
+            const v = row[c.key];
+            if (c.type === "file_upload") return !c.required || (Array.isArray(v) && v.length > 0);
+            return String(v ?? "").trim();
+          });
+        });
+        answer = valid.length > 0 ? valid : null;
+        break;
+      }
+      case "list": {
+        const filled = listItems.filter((s) => s.trim().length > 0);
+        answer = filled.length > 0 ? filled : null;
+        break;
+      }
       default:
         answer = value.trim() || null;
         break;
@@ -215,7 +254,180 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         </div>
       </div>
 
-      {effectiveInlineWidget === "file_upload" ? (
+      {effectiveInlineWidget === "table" && columns.length > 0 ? (
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  {columns.map((col) => (
+                    <th key={col.key} className="px-3 py-2 text-left font-medium">
+                      {col.label}
+                      {col.required && <span className="text-destructive ml-0.5">*</span>}
+                    </th>
+                  ))}
+                  <th className="w-10 px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map((row, ri) => (
+                  <tr key={ri} className="border-b last:border-0">
+                    {columns.map((col) => (
+                      <td key={col.key} className="px-3 py-1.5">
+                        {col.type === "file_upload" ? (
+                          <TableFileUploadCell
+                            value={(row[col.key] ?? []) as FileReference[]}
+                            onChange={(files) => {
+                              setTableRows((prev) => {
+                                const next = [...prev];
+                                next[ri] = { ...next[ri], [col.key]: files };
+                                return next;
+                              });
+                            }}
+                            accept={(col.accept as string) ?? "image/*,video/*"}
+                            multiple={!!col.multiple}
+                          />
+                        ) : col.type === "date" || col.key === "activity_date" ? (
+                          <input
+                            type="date"
+                            value={String(row[col.key] ?? "").slice(0, 10)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setTableRows((prev) => {
+                                const next = [...prev];
+                                next[ri] = {
+                                  ...next[ri],
+                                  [col.key]: val || "",
+                                };
+                                return next;
+                              });
+                            }}
+                            className="w-full min-w-[120px] px-2 py-1 rounded border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                          />
+                        ) : col.options && col.options.length > 0 ? (
+                          <select
+                            value={(row[col.key] ?? "") as string}
+                            onChange={(e) => {
+                              setTableRows((prev) => {
+                                const next = [...prev];
+                                next[ri] = { ...next[ri], [col.key]: e.target.value };
+                                return next;
+                              });
+                            }}
+                            className="w-full min-w-[100px] px-2 py-1 rounded border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                          >
+                            <option value="">{col.label}</option>
+                            {(col.options as Array<{ value: string; label: string }>).every(
+                              (o) => typeof o === "object" && "value" in o
+                            )
+                              ? (col.options as Array<{ value: string; label: string }>).map(
+                                  (opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  )
+                                )
+                              : (col.options as string[]).map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {String(opt).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                                  </option>
+                                ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={(row[col.key] ?? "") as string}
+                            onChange={(e) => {
+                              setTableRows((prev) => {
+                                const next = [...prev];
+                                next[ri] = { ...next[ri], [col.key]: e.target.value };
+                                return next;
+                              });
+                            }}
+                            placeholder={col.label}
+                            className="w-full px-2 py-1 rounded border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                          />
+                        )}
+                      </td>
+                    ))}
+                    <td className="px-2 py-1.5">
+                      <button
+                        onClick={() => setTableRows((prev) => prev.filter((_, i) => i !== ri))}
+                        className="p-1 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                setTableRows((prev) => [
+                  ...prev,
+                  Object.fromEntries(columns.map((c) => [c.key, c.type === "file_upload" ? [] : ""])),
+                ])
+              }
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              Add row
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : effectiveInlineWidget === "list" ? (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            {listItems.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={item}
+                  onChange={(e) => {
+                    setListItems((prev) => {
+                      const next = [...prev];
+                      next[i] = e.target.value;
+                      return next;
+                    });
+                  }}
+                  placeholder={(widgetConfig.placeholder as string) ?? "Item"}
+                  className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <button
+                  onClick={() => setListItems((prev) => prev.filter((_, j) => j !== i))}
+                  className="p-2 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setListItems((prev) => [...prev, ""])}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              {(widgetConfig.addLabel as string) ?? "Add item"}
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : effectiveInlineWidget === "file_upload" ? (
         <div className="space-y-2">
           <input
             ref={fileInputRef}
@@ -306,6 +518,107 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function TableFileUploadCell({
+  value,
+  onChange,
+  accept,
+  multiple,
+}: {
+  value: FileReference[];
+  onChange: (files: FileReference[]) => void;
+  accept: string;
+  multiple: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<PendingFile[]>([]);
+
+  const handleSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        const p: PendingFile = { file, uploading: true };
+        setPending((prev) => [...prev, p]);
+        try {
+          const res = await fetch("/api/media/presign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              mimeType: file.type,
+              fileSizeBytes: file.size,
+              context: "activity",
+            }),
+          });
+          if (!res.ok) throw new Error("Failed to get upload URL");
+          const { uploadUrl, s3Key } = await res.json();
+          await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+          const ref: FileReference = {
+            s3Key: s3Key as string,
+            originalFilename: file.name,
+            mimeType: file.type,
+            fileSizeBytes: file.size,
+          };
+          onChange([...value, ref]);
+          setPending((prev) => prev.filter((x) => x.file !== file));
+        } catch {
+          setPending((prev) => prev.map((x) => (x.file === file ? { ...x, uploading: false, error: "Failed" } : x)));
+        }
+      }
+      e.target.value = "";
+    },
+    [value, onChange]
+  );
+
+  const removeFile = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-1 min-w-[120px]">
+      <div className="flex flex-wrap gap-1">
+        {value.map((f, i) => (
+          <span
+            key={i}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted text-xs truncate max-w-[100px]"
+          >
+            {f.originalFilename?.slice(0, 12) ?? "file"}
+            <button
+              type="button"
+              onClick={() => removeFile(i)}
+              className="ml-0.5 text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        {pending.map((p, i) => (
+          <span key={`p-${i}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 text-xs">
+            <span className="w-2.5 h-2.5 border border-primary/30 border-t-primary rounded-full animate-spin" />
+            {p.file.name.slice(0, 10)}
+          </span>
+        ))}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        multiple={multiple}
+        className="hidden"
+        onChange={handleSelect}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+      >
+        <Upload className="h-3 w-3" />
+        {value.length > 0 ? "Add more" : "Add files"}
+      </button>
     </div>
   );
 }

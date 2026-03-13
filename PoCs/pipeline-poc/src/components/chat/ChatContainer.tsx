@@ -28,6 +28,8 @@ export function ChatContainer() {
   } | null>(null);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const [contextFilters, setContextFilters] = useState<{ id: string; name: string }[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!initialized.current) {
@@ -42,6 +44,13 @@ export function ChatContainer() {
       .then((res) => res.json())
       .then(setSessionContext)
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/context-filters")
+      .then((res) => res.json())
+      .then((data) => setContextFilters(data.filters ?? []))
+      .catch(() => setContextFilters([]));
   }, []);
 
   const isPublic = sessionContext?.publicMode ?? false;
@@ -60,6 +69,15 @@ export function ChatContainer() {
 
   const handleClearContext = useCallback(() => {
     setContextItems([]);
+  }, []);
+
+  const handleFilterSelect = useCallback((filterId: string) => {
+    const filter = contextFilters.find((f) => f.id === filterId);
+    if (filter) setSelectedFilter({ id: filter.id, name: filter.name });
+  }, [contextFilters]);
+
+  const handleClearFilter = useCallback(() => {
+    setSelectedFilter(null);
   }, []);
 
   return (
@@ -121,6 +139,7 @@ export function ChatContainer() {
         <MessageList
           messages={chat.messages}
           isLoading={chat.isLoading}
+          pendingRequest={chat.pendingRequest}
           conversationId={chat.conversationId}
           bookmarksEnabled={bookmarksEnabled}
           onAction={(action) => {
@@ -164,6 +183,13 @@ export function ChatContainer() {
 
         {/* Input */}
         <ChatInput
+          onSendReport={(filter) => {
+            chat.sendMessage({
+              source: "insights",
+              params: { filterId: filter.id, filterName: filter.name, reportRequest: true },
+            });
+            setSelectedFilter(null);
+          }}
           onSend={(content, files) => {
             chat.sendMessage({
               source: "chat",
@@ -171,13 +197,17 @@ export function ChatContainer() {
               files,
             });
           }}
-          onSendInsights={(content, items) => {
+          onSendInsights={(content, items, filter) => {
             chat.sendMessage({
               source: "insights",
               content,
-              params: { contextItems: items },
+              params: filter ? { filterId: filter.id, filterName: filter.name } : { contextItems: items },
             });
-            handleClearContext();
+            if (filter) {
+              setSelectedFilter(null);
+            } else {
+              handleClearContext();
+            }
           }}
           isLoading={chat.isLoading}
           conversationState={chat.conversationState}
@@ -185,6 +215,10 @@ export function ChatContainer() {
           contextItems={contextItems}
           onRemoveContext={handleRemoveContext}
           onClearContext={handleClearContext}
+          contextFilters={contextFilters}
+          selectedFilter={selectedFilter ?? undefined}
+          onFilterSelect={handleFilterSelect}
+          onClearFilter={handleClearFilter}
           onContextItemClick={(item) => {
             if (!item.viewAction) return;
             chat.sendMessage({

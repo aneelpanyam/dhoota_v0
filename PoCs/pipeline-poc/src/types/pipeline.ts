@@ -89,3 +89,26 @@ export interface PipelineResult {
   messageId?: string;
   error?: string;
 }
+
+export interface ReportDefinition {
+  id: string;
+  filter_id: string;
+  name: string;
+  description: string | null;
+  user_types: string[];
+  required_toggles: string[];
+  sort_order: number;
+}
+
+export interface ReportTemplate {
+  id: string;
+  report_id: string;
+  name: string;
+  sql: string;
+  param_mapping: Record<string, string>;
+  chart_type: string;
+  chart_title: string;
+  label_column: string | null;
+  value_columns: string[];
+  sort_order: number;
+}

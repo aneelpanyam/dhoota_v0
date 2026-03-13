@@ -1,5 +1,6 @@
 import { createServiceSupabase } from "@/lib/supabase/server";
 import type { OptionDefinition, SqlTemplate, OptionQuestion, UserTypeConfig } from "@/types/options";
+import type { ReportDefinition, ReportTemplate } from "@/types/pipeline";
 
 export async function loadOptionDefinitions(optionIds?: string[]): Promise<OptionDefinition[]> {
   const db = createServiceSupabase();
@@ -107,6 +108,37 @@ export async function loadUserConfig(userId: string): Promise<{
 
   if (error) return null;
   return data;
+}
+
+export async function loadReportDefinitions(
+  filterId?: string,
+  userType?: string
+): Promise<ReportDefinition[]> {
+  const db = createServiceSupabase();
+  let query = db.from("report_definitions").select("*").order("sort_order", { ascending: true });
+
+  if (filterId) {
+    query = query.eq("filter_id", filterId);
+  }
+  if (userType) {
+    query = query.contains("user_types", [userType]);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ReportDefinition[];
+}
+
+export async function loadReportTemplates(reportId: string): Promise<ReportTemplate[]> {
+  const db = createServiceSupabase();
+  const { data, error } = await db
+    .from("report_templates")
+    .select("*")
+    .eq("report_id", reportId)
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as ReportTemplate[];
 }
 
 export async function loadAvailableTags(tenantId: string): Promise<{ name: string; slug: string }[]> {

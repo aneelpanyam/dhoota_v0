@@ -1,7 +1,6 @@
-import type { OptionDefinition, OptionQuestion } from "@/types/options";
+import type { OptionDefinition } from "@/types/options";
 import type { QASession, QAResult } from "@/types/pipeline";
 import { loadOptionQuestions } from "./loader";
-import { getLLMProvider } from "@/lib/llm/factory";
 
 export async function startQASession(
   option: OptionDefinition,
@@ -29,7 +28,6 @@ export async function startQASession(
     return { status: "complete", collectedParams: knownParams };
   }
 
-  const llm = getLLMProvider();
   const questionData = remaining.map((q) => ({
     questionText: q.question_text,
     questionKey: q.question_key,
@@ -38,15 +36,9 @@ export async function startQASession(
     isRequired: q.is_required,
   }));
 
-  const groups = await llm.groupQuestions(questionData, knownParams);
-  if (groups.length === 0) {
-    return { status: "complete", collectedParams: knownParams };
-  }
-
-  const firstGroup = groups[0];
   return {
     status: "need_more",
-    nextQuestions: firstGroup.questions,
+    nextQuestions: questionData,
   };
 }
 
@@ -73,7 +65,6 @@ export async function continueQASession(
     return { status: "complete", collectedParams: merged };
   }
 
-  const llm = getLLMProvider();
   const questionData = remaining.map((q) => ({
     questionText: q.question_text,
     questionKey: q.question_key,
@@ -82,14 +73,9 @@ export async function continueQASession(
     isRequired: q.is_required,
   }));
 
-  const groups = await llm.groupQuestions(questionData, merged);
-  if (groups.length === 0) {
-    return { status: "complete", collectedParams: merged };
-  }
-
   return {
     status: "need_more",
-    nextQuestions: groups[0].questions,
+    nextQuestions: questionData,
     collectedParams: merged,
   };
 }

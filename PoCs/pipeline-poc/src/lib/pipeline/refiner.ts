@@ -31,6 +31,14 @@ export async function refineInput(
     refined.params.tags = userTags;
   }
 
+  // Preserve table/list outputs (participants, users, activities array, etc.) - they come from structured widgets
+  for (const key of ["users", "participants", "activities"] as const) {
+    const arr = rawParams[key];
+    if (arr && Array.isArray(arr) && arr.length > 0) {
+      refined.params[key] = arr;
+    }
+  }
+
   // Add suggested tags to displaySummary if present
   const sugTags = refined.suggestions?.tags;
   if (sugTags && Array.isArray(sugTags) && sugTags.length > 0) {
@@ -58,6 +66,11 @@ function sanitizeParams(params: Record<string, unknown>): Record<string, unknown
       .join(", ");
     delete cleaned.media_keys;
   }
+
+  // Remove table/list outputs before LLM - they are preserved and restored after
+  if (Array.isArray(cleaned.participants)) delete cleaned.participants;
+  if (Array.isArray(cleaned.users)) delete cleaned.users;
+  if (Array.isArray(cleaned.activities)) delete cleaned.activities;
 
   return cleaned;
 }

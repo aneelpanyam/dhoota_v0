@@ -105,6 +105,8 @@ export type WidgetType =
   | "status_ticket"
   | "confirmation_card"
   | "question_card"
+  | "question_stepper"
   | "default_options_menu"
   | "error_card"
-  | "context_picker";
+  | "context_picker"
+  | "report_view";

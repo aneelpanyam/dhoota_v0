@@ -163,10 +163,10 @@ export class OpenAIProvider implements LLMProvider {
       llmInput[k] = v;
     }
 
-    const sysPrompt = `Refine raw user input into well-formed activity data. Return JSON with exactly these keys:
-{"params":{"title":"...","description":"...","status":"...","visibility":"...","activity_date":"...","location":"..."},"suggestions":{"tags":[{"name":"...","confidence":0.8}]},"refinementNotes":[],"displaySummary":{"Title":"...","Description":"..."}}`
+    const sysPrompt = `Refine raw user input into well-formed activity data. Use title, description, activity_date, location, visibility, participants, and tags to produce a coherent title and description. Return JSON with exactly these keys:
+{"params":{"title":"...","description":"...","status":"...","visibility":"...","activity_date":"...","location":"...","participants":[...]},"suggestions":{"tags":[{"name":"...","confidence":0.8}]},"refinementNotes":[],"displaySummary":{"Title":"...","Description":"...","Date":"...","Location":"...","Visibility":"..."}}`
       + (tagList ? `\nAvailable tags: ${tagList}` : "")
-      + `\nRules: title=short 5-10 words, description=1-2 full sentences (different from title), omit empty fields from displaySummary, dates in "Mon DD, YYYY" format in displaySummary, infer status from tense (past=completed, future=planned).`;
+      + `\nRules: title=short 5-10 words, description=1-2 full sentences (different from title), omit empty fields from displaySummary, dates in "Mon DD, YYYY" format in displaySummary, infer status from tense (past=completed, future=planned). Include Date, Location, Visibility in displaySummary when provided.`;
     const userInput = JSON.stringify(llmInput);
 
     const MAX_ATTEMPTS = 2;

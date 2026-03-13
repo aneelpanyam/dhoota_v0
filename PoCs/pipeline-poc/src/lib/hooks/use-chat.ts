@@ -28,12 +28,18 @@ export interface ConversationSummary {
   created_at: string;
 }
 
+export interface PendingRequest {
+  optionId?: string;
+  source?: string;
+}
+
 export interface UseChatReturn {
   messages: ChatMessage[];
   conversationId: string | null;
   conversationState: ConversationState;
   defaultOptions: OptionReference[];
   isLoading: boolean;
+  pendingRequest: PendingRequest | null;
   error: string | null;
   userDisplayName: string;
   conversations: ConversationSummary[];
@@ -51,6 +57,7 @@ export function useChat(): UseChatReturn {
   const [conversationState, setConversationState] = useState<ConversationState>("active");
   const [defaultOptions, setDefaultOptions] = useState<OptionReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [userDisplayName, setUserDisplayName] = useState("");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -213,10 +220,25 @@ export function useChat(): UseChatReturn {
       // Add user message to the list and record flow start index
       const userContent = request.content || deriveUserContent(request);
       if (userContent) {
-        const insightContext =
-          request.source === "insights" && Array.isArray(request.params?.contextItems)
-            ? (request.params!.contextItems as ChatMessage["contextItems"])
-            : undefined;
+        let insightContext: ChatMessage["contextItems"];
+        if (request.source === "insights") {
+          if (Array.isArray(request.params?.contextItems) && request.params.contextItems.length > 0) {
+            insightContext = request.params.contextItems as ChatMessage["contextItems"];
+          } else if (request.params?.filterId && request.params?.filterName) {
+            insightContext = [{
+              entityType: "Filter",
+              entityId: request.params.filterId as string,
+              label: request.params.filterName as string,
+              summary: "",
+            }];
+          } else {
+            insightContext = undefined;
+          }
+        } else if ((request.source === "default_option" || request.source === "inline_action") && Array.isArray(request.params?.__contextItems) && request.params.__contextItems.length > 0) {
+          insightContext = request.params.__contextItems as ChatMessage["contextItems"];
+        } else {
+          insightContext = undefined;
+        }
         const userMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "user",
@@ -238,11 +260,14 @@ export function useChat(): UseChatReturn {
       }
 
       try {
+        const { __contextItems: _strip, ...paramsForApi } = (request.params ?? {}) as Record<string, unknown> & { __contextItems?: unknown };
+        const apiRequest = request.params ? { ...request, params: paramsForApi } : request;
+
         const res = await fetch("/api/chat/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...request,
+            ...apiRequest,
             conversationId: convId,
           }),
         });
@@ -269,6 +294,40 @@ export function useChat(): UseChatReturn {
         setMessages((prev) => {
           let updated = [...prev];
 
+          // When response contains entityContext (e.g. edit flow), show it above the user's message (like pinned context)
+          const widgetWithContext = data.widgets?.find(
+            (w) =>
+              (w.type === "question_stepper" || w.type === "confirmation_card") &&
+              w.data?.entityContext
+          );
+          const entityCtx = widgetWithContext?.data?.entityContext as
+            | { entityType: string; entityId: string; title: string; subtitle?: string }
+            | undefined;
+          if (entityCtx && updated.length > 0) {
+            const lastIdx = updated.length - 1;
+            const lastMsg = updated[lastIdx];
+            if (lastMsg.role === "user" && !lastMsg.contextItems?.length) {
+              updated[lastIdx] = {
+                ...lastMsg,
+                contextItems: [
+                  {
+                    entityType: entityCtx.entityType,
+                    entityId: entityCtx.entityId,
+                    label: entityCtx.title,
+                    summary: entityCtx.subtitle ?? "",
+                    viewAction:
+                      entityCtx.entityType === "activity"
+                        ? {
+                            optionId: "activity.view",
+                            params: { activity_id: entityCtx.entityId },
+                          }
+                        : undefined,
+                  },
+                ],
+              };
+            }
+          }
+
           if (request.source === "confirmation" && currentFlowId) {
             // Collapse all messages belonging to this flow using flowId + start index
             const startIdx = flowStartIndexRef.current;
@@ -293,7 +352,7 @@ export function useChat(): UseChatReturn {
               const msg = updated[i];
               if (msg.role === "assistant" && msg.response) {
                 const hasInteractive = msg.response.widgets.some(
-                  (w) => w.type === "confirmation_card" || w.type === "question_card" || w.type === "context_picker"
+                  (w) => w.type === "confirmation_card" || w.type === "question_card" || w.type === "question_stepper" || w.type === "context_picker"
                 );
                 if (hasInteractive) {
                   updated[i] = {
@@ -321,6 +380,7 @@ export function useChat(): UseChatReturn {
         setError(err instanceof Error ? err.message : "Failed to send message");
       } finally {
         setIsLoading(false);
+        setPendingRequest(null);
       }
     },
     [refreshConversations]
@@ -340,7 +400,7 @@ export function useChat(): UseChatReturn {
         const msg = updated[i];
         if (msg.role === "assistant" && msg.response) {
           const hasInteractive = msg.response.widgets.some(
-            (w) => w.type === "confirmation_card" || w.type === "question_card" || w.type === "context_picker"
+            (w) => w.type === "confirmation_card" || w.type === "question_card" || w.type === "question_stepper" || w.type === "context_picker"
           );
           if (hasInteractive) {
             updated[i] = {
@@ -415,6 +475,7 @@ export function useChat(): UseChatReturn {
     conversationState,
     defaultOptions,
     isLoading,
+    pendingRequest,
     error,
     userDisplayName,
     conversations,
@@ -430,6 +491,15 @@ export function useChat(): UseChatReturn {
 function freezeInteractiveWidget(
   w: import("@/types/api").Widget
 ): import("@/types/api").Widget {
+  if (w.type === "question_stepper") {
+    const questions = (w.data.questions as { questionText: string }[]) ?? [];
+    const texts = questions.map((q) => q.questionText);
+    return {
+      ...w,
+      type: "text_response",
+      data: { text: texts.join("\n\n") },
+    };
+  }
   if (w.type === "question_card") {
     const questions = Array.isArray(w.data.questionText)
       ? (w.data.questionText as string[])
