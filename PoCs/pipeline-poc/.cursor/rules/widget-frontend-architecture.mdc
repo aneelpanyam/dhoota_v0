@@ -1,0 +1,85 @@
+---
+description: Frontend widget architecture - how chat responses render as widgets, the component hierarchy, and data_list rendering patterns
+globs: src/components/widgets/**/*.tsx, src/components/chat/**/*.tsx, src/types/api.ts
+alwaysApply: false
+---
+
+# Widget & Frontend Architecture
+
+## Chat Message Flow
+
+1. **`ChatContainer`** (`src/components/chat/ChatContainer.tsx`): manages conversation state, sends messages via `/api/chat/message`, receives `ChatMessageResponse`
+2. **`MessageBubble`** (`src/components/chat/MessageBubble.tsx`): renders a single message. For assistant messages, iterates `response.widgets` and renders each via `WidgetRenderer`. Follow-up buttons rendered below widgets.
+3. **`WidgetRenderer`** (`src/components/widgets/WidgetRenderer.tsx`): maps `widget.type` → component via `widgetMap`. Falls back to `TextResponseWidget`.
+
+## Widget Types & Components
+
+| WidgetType | Component | Used For |
+|------------|-----------|----------|
+| `text_response` | `TextResponseWidget` | Markdown text, descriptions, SQL template display |
+| `data_list` | `DataListWidget` | Lists of entities (activities, users, options, questions, etc.) |
+| `activity_card` | `ActivityCardWidget` | Single activity detail view with media, notes, tags |
+| `confirmation_card` | `ConfirmationCardWidget` | Pre-execution confirmation with field summary |
+| `question_card` | `QuestionCardWidget` | QA session questions for collecting params |
+| `default_options_menu` | `DefaultOptionsMenuWidget` | Grid of option buttons for navigation |
+| `data_table` | `DataTableWidget` | Tabular data display |
+| `chart` | `ChartWidget` | Charts and visualizations |
+| `stats_card` | `StatsCardWidget` | Stat summaries |
+| `error_card` | `ErrorCardWidget` | Error messages |
+| `context_picker` | `ContextPickerWidget` | Context selection UI |
+| `calendar` | `CalendarWidget` | Calendar view |
+| `timeline` | `TimelineWidget` | Timeline view |
+
+## `DataListWidget` Deep Dive
+
+The most complex widget. Renders different sub-components based on item shape:
+
+### Item Type Detection (in render order)
+1. **`NoteListItem`**: items have `_is_note` + `content` fields
+2. **`BookmarkListItem`**: items have `_entity_type_raw` field
+3. **`TagListItem`**: items have `color` + `source` fields
+4. **`ActivityListItem`**: items have `activity_date` + `title` fields
+5. **`GenericListItem`**: fallback for everything else (admin lists, option lists, user lists, question lists, etc.)
+
+### `GenericListItem` Column Rendering
+- **`TITLE_KEYS`**: `name`, `title`, `label`, `display_name`, `email`, `slug`, `option_name`, `box_title`, `tenant_name` → rendered as the item heading
+- **`BADGE_KEYS`**: `status`, `user_type`, `subscription`, `visibility`, `type`, etc. → colored badge pills
+- **`BOOLEAN_KEYS`**: `is_active`, `pinned`, `enabled`, etc. → Yes/No badges
+- **Count columns** (`*_count`): rendered with icons from `COUNT_ICONS` map
+- **Object values**: rendered as expandable JSON (`ExpandableJson`)
+- **Everything else**: `label: value` text
+
+### Widget Data Properties (set by formatter)
+- `items[]`: the data rows
+- `columns[]`: `{ key, label }` defining which fields to display
+- `totalItems`, `page`, `pageSize`: pagination
+- `viewOptionId` / `viewParamKey`: clicking an item triggers this option (item becomes clickable)
+- `editOptionId` / `editParamKey`: adds edit (pencil) button per item
+- `paginationOptionId`: option to call for page navigation
+- `_noItemActions: true`: suppresses `attachItemActions` from adding per-item action icons
+- `_noPin: true`: hides pin button on items and "Pin all" in footer
+
+### Per-Item Actions
+- **Pin button**: shown when `onPinToContext` is provided and `_noPin` is not set. Adds item to context strip for insights queries.
+- **Edit button**: shown when `editOptionId && editParamKey && item.id && viewOptionId` are all truthy
+- **`ItemActions`**: renders `widget.actions[]` as icon buttons. Icons resolved via `iconMap` → falls back to `Zap` if icon name not found
+
+### `iconMap` in DataListWidget
+Available icons: `Eye`, `Pencil`, `MessageSquare`, `Image`, `PlusCircle`, `MinusCircle`, `Trash2`, `CalendarDays`, `CalendarPlus`, `UserPlus`, `UserCog`, `Users`, `Reply`, `Key`, `ShieldOff`, `RefreshCw`, `ToggleLeft`, `List`, `FileText`, `MessageSquarePlus`, `MessageCircle`, `Smartphone`, `Zap`, `Calendar`, `Pin`
+
+**If an option's icon isn't in this map, the action button renders as a Zap icon.** Add missing icons here when needed.
+
+## Props Passed Through Widget Tree
+
+```
+ChatContainer
+  → MessageBubble
+    → WidgetRenderer { widget, onAction, onOptionSelect, onConfirm, onQAResponse, onCancel, onPinToContext }
+      → DataListWidget / ActivityCardWidget / etc.
+```
+
+- **`onAction`**: triggers inline actions (view details, edit, delete)
+- **`onOptionSelect`**: triggers an option by ID with params (follow-ups, pagination, drill-down)
+- **`onConfirm`**: submits a confirmation card
+- **`onQAResponse`**: submits QA question answers
+- **`onPinToContext`**: pins an item to the context strip for insights

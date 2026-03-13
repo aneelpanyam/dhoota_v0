@@ -1,0 +1,341 @@
+---
+description: Options system - how options, questions, and activities work across back-end and front-end, and how to manage them
+globs: supabase/migrations/**/*.sql, src/lib/pipeline/**/*.ts, src/components/widgets/**/*.tsx, src/types/options.ts
+alwaysApply: false
+---
+
+# Options System
+
+The options system is the core abstraction that drives the entire application. Every user action — creating an activity, editing a profile, viewing a list, running an admin command — is an **option**. Options are data-driven and stored in the database, not hardcoded.
+
+## Architecture Overview
+
+```
+option_definitions  →  option_questions  →  sql_templates
+     (what)              (collect params)      (execute)
+```
+
+1. **option_definitions**: Declares what an option is (name, category, who can use it, what widget to show)
+2. **option_questions**: Defines the Q&A flow to collect parameters from the user
+3. **sql_templates**: The SQL queries that run with the collected parameters
+
+## Database Tables
+
+### `option_definitions`
+
+Each row is one operation the user can perform.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | text PK | Namespaced ID: `{category}.{action}` (e.g. `activity.create`, `admin.tenant.edit`) |
+| `name` | text | Display name shown to user |
+| `description` | text | Explanation of what this option does |
+| `category` | text | Grouping: `activity`, `admin`, `public`, `announcement`, `info_card`, `report`, `bookmark`, `planning`, `profile`, `public_site`, `suggestion_box`, `view`, `analysis` |
+| `icon` | text | Lucide icon name (must exist in frontend `iconMap`) |
+| `keywords` | text[] | Trigger words for natural-language matching by the resolver |
+| `user_types` | text[] | Who can use it: `worker`, `candidate`, `representative`, `system_admin`, `citizen` |
+| `required_toggles` | text[] | Feature flags that must be enabled: `public_site_enabled`, `suggestion_box_enabled`, `reports_enabled`, `bookmarks_enabled`, `analysis_enabled`, `programs_enabled` |
+| `show_in_defaults` | boolean | Shown in the default options menu (the initial button grid) |
+| `default_priority` | integer | Sort order in default menu (lower = higher) |
+| `accepts_files` | boolean | Whether file upload is allowed |
+| `input_schema` | jsonb | JSON Schema defining accepted parameters |
+| `summary_prompt` | text | LLM prompt for formatting the response |
+| `follow_up_option_ids` | text[] | Options shown as buttons after execution |
+| `is_active` | boolean | Soft toggle |
+| `target_widget` | text | Default widget type: `data_list`, `activity_card`, `stats_card`, etc. |
+| `entity_type` | text | The entity this operates on: `activity`, `user`, `tenant`, etc. |
+| `requires_confirmation` | boolean | Show confirmation card before write operations |
+| `skip_refinement` | boolean | Skip LLM param enrichment (for structured-only inputs) |
+
+### `option_questions`
+
+Each row is one question in the Q&A flow for an option.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | uuid PK | Auto-generated |
+| `option_id` | text FK | Which option this question belongs to |
+| `question_text` | text | The question shown to the user |
+| `question_key` | text | Maps to a parameter name (e.g. `title`, `activity_date`, `visibility`) |
+| `question_order` | integer | Order in the Q&A flow (0-based) |
+| `is_required` | boolean | Must be answered before proceeding |
+| `inline_widget` | text | Input widget type: `NULL` (text input), `date_picker`, `select`, `visibility_select`, `file_upload`, `color_picker`, `multi_select`, `tag_select` |
+| `widget_config` | jsonb | Widget configuration (options, defaults, placeholders, sources) |
+| `groupable` | boolean | Can be grouped with other questions on the same screen |
+| `metadata` | jsonb | Extra metadata |
+
+### `sql_templates`
+
+Each row is a SQL query that runs when an option is executed.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `option_id` | text FK | Which option this template belongs to |
+| `name` | text | Template name (e.g. `insert_activity`, `list_activities`) |
+| `sql` | text | Parameterized SQL with `$1`, `$2`, etc. |
+| `param_mapping` | jsonb | Maps `$N` to `params.xxx` or `context.xxx` |
+| `execution_order` | integer | Run order (-1 = pre-validation, 0+ = main queries) |
+| `query_type` | text | `read` or `write` |
+
+### Tenant/User Override Tables
+
+| Table | Purpose |
+|-------|---------|
+| `tenant_option_overrides` | Per-tenant: enable/disable, rename, re-icon, re-prioritize options |
+| `tenant_question_overrides` | Per-tenant: change question text, widget_config, is_required |
+| `user_type_configs` | Per user-type: `init_option_ids`, `default_option_ids`, `available_option_ids` |
+| `user_configs` | Per-user overrides of option sets |
+| `tenant_feature_flags` | Feature flags controlling option visibility |
+
+## How Options Flow End-to-End
+
+### Back-End Pipeline (`src/lib/pipeline/index.ts`)
+
+```
+User Message → Resolve → QA → Refine → Execute SQL → Format → Attach Actions → Build Follow-ups → Response
+```
+
+1. **Resolve** (`resolver.ts`): If `optionId` is provided, use it directly. Otherwise, match user text against `keywords` using LLM.
+
+2. **QA Session** (`qa-engine.ts`):
+   - Load questions for the option from `option_questions` (with tenant overrides)
+   - Check which `question_key` params are already collected
+   - If more required: return `question_card` widget(s) for the next batch
+   - Questions with `groupable: true` can appear together on one screen
+   - Questions with `groupable: false` get their own screen
+   - When all required params collected → `complete`
+
+3. **Refine** (`refiner.ts`): LLM enriches free-text params into structured data (e.g. "yesterday" → actual date, raw description → title + description). Skipped when `skip_refinement: true`.
+
+4. **Execute SQL** (`executor.ts`): Run `sql_templates` in `execution_order`. `param_mapping` resolves `params.*` from collected Q&A + refinement params, and `context.*` from session (tenantId, userId).
+
+5. **Format** (`formatter.ts`): Convert SQL results into widgets. Specialized formatters for complex views, generic formatter for standard CRUD.
+
+6. **Attach Actions** (`index.ts`): Add per-item action buttons (edit, delete, etc.) to list widgets based on `follow_up_option_ids`.
+
+7. **Build Follow-ups** (`index.ts`): Convert `follow_up_option_ids` into clickable buttons shown below the response.
+
+### Front-End Rendering
+
+| Component | Widget Type | Purpose |
+|-----------|-------------|---------|
+| `DefaultOptionsMenuWidget` | `default_options_menu` | Initial button grid of available options |
+| `QuestionCardWidget` | `question_card` | Q&A input form with appropriate widgets |
+| `ConfirmationCardWidget` | `confirmation_card` | Confirm before write operations |
+| `DataListWidget` | `data_list` | Table/list of items with actions |
+| `ActivityCardWidget` | `activity_card` | Single activity detail view |
+
+When a user clicks an option button or answers questions:
+- Front-end sends `{ optionId, params, content }` to `/api/chat/message`
+- Pipeline runs the flow above
+- Response includes `widgets[]` to render and `followUps[]` for next-action buttons
+
+## Rules for Creating/Managing Options
+
+### Naming Convention
+
+Options use dot-namespaced IDs: `{category}.{action}`
+
+- CRUD: `.create`, `.list`, `.view`, `.edit`, `.delete`
+- Special: `.add_note`, `.add_media`, `.configure`, `.manage`
+- Admin: `admin.{entity}.{action}`
+- Public: `public.{entity}`
+
+### Question Design Rules
+
+1. **Every edit option MUST have per-field questions** matching what its SQL template accepts. Do NOT rely solely on a single free-form "describe what to change" question — that forces the LLM refiner to do all the work and is unreliable.
+
+2. **Edit questions should all be optional** (`is_required: false`) with "leave blank to keep current" guidance, since COALESCE in the SQL handles nulls.
+
+3. **Create questions should have the main field as required** (`is_required: true`) and supplementary fields as optional.
+
+4. **Use appropriate `inline_widget` types**:
+   - `NULL` → free text input
+   - `date_picker` → date selection
+   - `select` → dropdown with `widget_config.options` array
+   - `visibility_select` → private/team/public selector
+   - `file_upload` → file picker with `widget_config.accept` and `widget_config.multiple`
+   - `color_picker` → color selection
+   - `multi_select` → multiple selection
+   - `tag_select` → tag picker
+
+5. **`groupable: true`** means the question can appear alongside others on the same screen. Use for short inputs (selects, dates, text fields). Set `groupable: false` for long-form text inputs that need their own screen.
+
+6. **`question_key` must match `param_mapping`** values in the corresponding `sql_templates`. The key maps directly to `params.{question_key}`.
+
+7. **`widget_config` patterns**:
+   - Static options: `{"options": ["a", "b", "c"]}`
+   - Default value: `{"default": "a"}`
+   - Placeholder: `{"placeholder": "Enter something"}`
+   - Dynamic source: `{"source": "tenants"}` (fetched from API)
+   - File accept: `{"accept": "image/*,video/*", "multiple": true}`
+
+### Follow-up Design Rules
+
+1. **`follow_up_option_ids`** determines what buttons appear after an option executes.
+2. After a **create** → show the list and the created item's actions (view, add_note, etc.)
+3. After an **edit** → show view and list
+4. After a **delete** → show list and create
+5. After a **list** → show create and filters
+6. Child options (`.edit`, `.delete`, `.add_note`, etc.) are also used by `attachItemActions` to add per-row action buttons in `data_list` widgets.
+
+### Adding a New Option
+
+1. **Migration**: Insert into `option_definitions` with all required fields
+2. **Questions**: Insert into `option_questions` for each parameter the user needs to provide
+3. **SQL Templates**: Insert into `sql_templates` with parameterized queries
+4. **User Type Config**: Update `user_type_configs` to include the new option in `available_option_ids` (and `default_option_ids` if it should appear in the menu)
+5. **Feature Flag** (optional): Add to `required_toggles` if gated behind a flag
+6. **Formatter** (optional): Add specialized formatter in `formatter.ts` if generic formatting isn't sufficient
+
+### Tenant Customization
+
+- **Enable/disable** options per tenant via `tenant_option_overrides`
+- **Rename/re-icon** options per tenant via `tenant_option_overrides`
+- **Change question text/config** per tenant via `tenant_question_overrides`
+- **Feature flags** gate entire feature sets via `tenant_feature_flags`
+
+Use the admin options to manage these:
+- `admin.option.list` / `admin.option.configure` / `admin.option.view`
+- `admin.question.list` / `admin.question.configure`
+- `admin.feature_flag.manage`
+
+## Complete Option Inventory
+
+### Activity (core)
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `activity.create` | 5: description_raw*, activity_date, location, media_keys, visibility | Main create flow |
+| `activity.list` | 0 | Read-only, no params needed |
+| `activity.view` | 0 | Triggered with `activity_id` from list |
+| `activity.edit` | 6: title, description, activity_date, location, status, visibility | All optional, per-field |
+| `activity.delete` | 0 | Triggered with `activity_id`, has confirmation |
+| `activity.add_note` | 1: content* | Triggered with `activity_id` from view |
+| `activity.add_media` | 1: media_keys* (file_upload) | Triggered with `activity_id` from view |
+
+### Tags & Stats
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `view.stats` | 0 | Read-only dashboard |
+| `tag.manage` | 0 | Read-only list |
+| `tag.create` | 2: name*, color | Simple create |
+
+### Announcements
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `announcement.create` | 4: title*, content*, visibility, pinned | Behind `public_site_enabled` |
+| `announcement.list` | 0 | Read-only |
+| `announcement.edit` | 4: title, content, visibility, pinned | All optional, per-field |
+| `announcement.delete` | 0 | Triggered with ID |
+
+### Info Cards
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `info_card.create` | 4: card_type*, title*, content_raw*, visibility | Behind `public_site_enabled` |
+| `info_card.list` | 0 | Read-only |
+| `info_card.edit` | 4: title, content_raw, card_type, visibility | All optional, per-field |
+| `info_card.delete` | 0 | Triggered with ID |
+
+### Reports & Bookmarks
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `report.request` | 1: report_type* (select) | Behind `reports_enabled` |
+| `report.list` | 0 | Read-only |
+| `bookmark.add` | 0 | Triggered from item actions |
+| `bookmark.list` | 0 | Read-only |
+| `bookmark.remove` | 0 | Triggered from list |
+
+### Programs (replaced plans)
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `program.create` | 5: title*, description, start_date, end_date, visibility | Behind `programs_enabled` |
+| `program.list` | 0 | Read-only |
+| `program.view` | 0 | Triggered with ID |
+| `program.edit` | 7: program_id*, title, description, start_date, end_date, status, visibility | Full per-field edit |
+| `program.add_activity` | 6: program_id*, title*, description, planned_date, milestone_label, location | Add activity to program |
+| `program.remove_activity` | 2: program_id*, activity_id* | Remove from program |
+| `program.delete` | 1: program_id* | With confirmation |
+
+### Profile & Public Site
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `profile.view` | 0 | Read-only |
+| `profile.edit` | 1: display_name | Simple edit |
+| `public_site.configure` | 2: welcome_message, enabled_option_ids | Behind `public_site_enabled` |
+| `public_site.preview` | 0 | Read-only |
+
+### Suggestion Box
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `citizen.access.create` | 0 | Auto-generates code |
+| `citizen.access.assign` | 2: access_code_id*, mobile_number* | Link citizen |
+| `citizen.access.list` | 0 | Read-only |
+| `citizen.access.revoke` | 0 | Triggered with ID |
+| `citizen.access.regenerate` | 0 | Triggered with ID |
+| `citizen.group.create` | 2: name*, description | Create group |
+| `citizen.group.list` | 0 | Read-only |
+| `citizen.group.edit` | 2: name, description | All optional |
+| `suggestion_box.create` | 2: title*, description | Create box |
+| `suggestion_box.list` | 0 | Read-only |
+| `suggestion_box.edit` | 3: title, description, is_active | All optional |
+| `suggestion.list` | 0 | Read-only |
+| `suggestion.respond` | 2: content*, status | Add note + update status |
+
+### Public/Citizen Options
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `public.activities` | 0 | Read-only |
+| `public.stats` | 0 | Read-only |
+| `public.announcements` | 0 | Read-only |
+| `public.info_cards` | 0 | Read-only |
+| `public.about` | 0 | Read-only |
+| `public.programs` | 0 | Read-only |
+| `public.suggestion.submit` | 3: mobile_number*, access_code*, content* | Citizen auth + submit |
+| `public.suggestion.list` | 2: mobile_number*, access_code* | Citizen auth + view |
+
+### Analysis (behind `analysis_enabled`)
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `analysis.activities` | 5: search_text, status, date_from, date_to, tag | All optional filters |
+| `analysis.tags` | 1: search_text | Optional filter |
+| `analysis.timeline` | 4: granularity, date_from, date_to, status | All optional filters |
+| `analysis.notes` | 3: search_text, date_from, date_to | All optional filters |
+| `analysis.specific_activity` | 3: search_text*, date, status | search_text required |
+
+### Admin Options
+
+| Option | Questions | Notes |
+|--------|-----------|-------|
+| `admin.tenant.create` | 3: name*, slug*, subscription | Create tenant |
+| `admin.tenant.list` | 0 | Read-only |
+| `admin.tenant.view` | 0 | Triggered with ID |
+| `admin.tenant.edit` | 4: tenant_id*, name, subscription, custom_domain | Per-field edit |
+| `admin.user.provision` | 4: tenant_id*, email*, display_name*, user_type* | Create user |
+| `admin.user.list` | 0 | Read-only |
+| `admin.user.view` | 0 | Triggered with ID |
+| `admin.user.edit` | 5: user_id*, display_name, user_type, regenerate_access_code, deactivate | Per-field edit |
+| `admin.feature_flag.manage` | 3: tenant_id*, flag_name*, enabled* | Toggle flags |
+| `admin.option.list` | 0 | Read-only |
+| `admin.option.configure` | 3: tenant_id*, option_id*, enabled | Per-tenant toggle |
+| `admin.option.view` | 0 | Triggered with ID |
+| `admin.question.list` | 2: option_id*, tenant_id | View questions |
+| `admin.question.configure` | 4: tenant_id*, question_id*, question_text_override, is_required_override | Override questions |
+| `admin.conversation.list` | 0 | Read-only |
+| `admin.conversation.view` | 0 | Triggered with ID |
+| `admin.trace.lookup` | 1: trace_id* | Debug tool |
+| `admin.subscription.manage` | 0 | Read-only |
+| `admin.usage.view` | 0 | Read-only |
+| `admin.report.list` | 0 | Read-only |
+| `admin.report.process` | 0 | Triggered with ID |
+
+`*` = required question

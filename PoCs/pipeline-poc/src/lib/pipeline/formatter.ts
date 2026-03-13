@@ -1109,6 +1109,7 @@ function formatAdminOptionView(
       totalItems: 1,
       page: 1,
       pageSize: 1,
+      _noItemActions: true,
     },
   });
 
@@ -1160,6 +1161,27 @@ function formatAdminOptionView(
         totalItems: questionItems.length,
         page: 1,
         pageSize: 50,
+        _noItemActions: true,
+        _noPin: true,
+      },
+    });
+  }
+
+  const followUps = Array.isArray(optDef.follow_up_option_ids) ? optDef.follow_up_option_ids as string[] : [];
+  if (followUps.length > 0) {
+    widgets.push({ type: "text_response", data: { text: "### Follow-up Options" } });
+    widgets.push({
+      type: "data_list",
+      data: {
+        items: followUps.map((id) => ({ id, name: id })),
+        columns: [{ key: "name", label: "Option ID" }],
+        totalItems: followUps.length,
+        page: 1,
+        pageSize: 50,
+        viewOptionId: "admin.option.view",
+        viewParamKey: "option_id",
+        _noItemActions: true,
+        _noPin: true,
       },
     });
   }

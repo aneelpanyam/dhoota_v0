@@ -752,7 +752,7 @@ function attachItemActions(
   if (itemActions.length === 0) return widgets;
 
   return widgets.map((w) => {
-    if (w.type === "data_list") return { ...w, actions: itemActions };
+    if (w.type === "data_list" && !w.data._noItemActions) return { ...w, actions: itemActions };
     if (w.type === "activity_card") {
       const resourceId = w.data.id as string | undefined;
       const cardActions = resourceId

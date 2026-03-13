@@ -133,6 +133,8 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
   const editOptionId = d.editOptionId as string | undefined;
   const editParamKey = d.editParamKey as string | undefined;
   const paginationOptionId = d.paginationOptionId as string | undefined;
+  const noPin = !!d._noPin;
+  const effectiveOnPinToContext = noPin ? undefined : onPinToContext;
 
   const hasActivityFields = items.length > 0 && "activity_date" in items[0] && "title" in items[0];
   const hasTagFields = items.length > 0 && ("color" in items[0] && "source" in items[0]);
@@ -231,7 +233,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                   <NoteListItem
                     item={item}
                     onAction={onAction}
-                    onPinToContext={onPinToContext}
+                    onPinToContext={effectiveOnPinToContext}
                     columns={columns}
                   />
                 ) : hasBookmarkFields ? (
@@ -241,14 +243,14 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     onAction={onAction}
                   />
                 ) : hasTagFields ? (
-                  <TagListItem item={item} onOptionSelect={onOptionSelect} onPinToContext={onPinToContext} columns={columns} />
+                  <TagListItem item={item} onOptionSelect={onOptionSelect} onPinToContext={effectiveOnPinToContext} columns={columns} />
                 ) : hasActivityFields ? (
                   <ActivityListItem
                     item={item}
                     actions={widget.actions}
                     onAction={onAction}
                     onEdit={() => setEditingItemId(item.id as string)}
-                    onPinToContext={onPinToContext}
+                    onPinToContext={effectiveOnPinToContext}
                     columns={columns}
                   />
                 ) : (
@@ -263,7 +265,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     viewParamKey={viewParamKey}
                     editOptionId={editOptionId}
                     editParamKey={editParamKey}
-                    onPinToContext={onPinToContext}
+                    onPinToContext={effectiveOnPinToContext}
                   />
                 )}
               </div>
@@ -296,13 +298,13 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
             ) : (
               <span>{totalItems} item{totalItems !== 1 ? "s" : ""}</span>
             )}
-            {onPinToContext && items.length > 0 && (
+            {effectiveOnPinToContext && items.length > 0 && (
               <button
                 onClick={() => {
                   for (const item of items) {
                     const activityId = hasActivityFields ? (item.id as string | undefined) : undefined;
                     const viewAction = activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined;
-                    onPinToContext(buildContextItem(item, columns, viewAction));
+                    effectiveOnPinToContext(buildContextItem(item, columns, viewAction));
                   }
                 }}
                 className="flex items-center gap-1 text-primary/70 hover:text-primary transition"

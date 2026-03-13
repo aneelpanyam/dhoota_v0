@@ -1,0 +1,77 @@
+---
+description: Pipeline architecture - how backend processes chat messages, resolves options, executes SQL, and formats responses into widgets
+globs: src/lib/pipeline/**/*.ts, src/types/pipeline.ts, src/types/options.ts, supabase/migrations/**/*.sql
+alwaysApply: false
+---
+
+# Pipeline Architecture
+
+## Request Flow
+
+1. **API Route** (`src/app/api/chat/message/route.ts`) receives `SendMessageRequest` with `source`, `optionId`, `content`, `params`
+2. **`processMessage`** (`src/lib/pipeline/index.ts`) orchestrates the full pipeline:
+   - **Resolve** → **QA** → **Refine** → **Execute SQL** → **Format** → **Attach Actions** → **Build Follow-ups** → **Response**
+
+## Pipeline Stages (in `index.ts`)
+
+| Stage | Module | Purpose |
+|-------|--------|---------|
+| Resolve option | `resolver.ts` | Match user input to an `OptionDefinition` via LLM or direct `optionId` |
+| QA session | `qa-engine.ts` | Collect required params via questions defined in `option_questions` table |
+| Refine input | `refiner.ts` | LLM enriches/validates params before SQL execution |
+| Load templates | `loader.ts` | Fetch `sql_templates` rows for the resolved option |
+| Execute SQL | `executor.ts` | Run templates in order, produce `SqlResult[]` |
+| Format response | `formatter.ts` | Convert SQL results → `FormattedResponse` (summary + widgets + followUpOptionIds) |
+| Attach item actions | `index.ts` `attachItemActions()` | Add per-item action buttons to `data_list`/`activity_card` widgets |
+| Build follow-ups | `index.ts` `buildFollowUps()` | Convert `follow_up_option_ids` → `OptionReference[]` shown as buttons below widgets |
+
+## Key Data Structures
+
+### Database Tables
+
+- **`option_definitions`**: Each row defines one operation (e.g. `activity.create`, `admin.option.view`). Key columns: `id`, `name`, `category`, `user_types`, `follow_up_option_ids` (text[]), `entity_type`, `target_widget`, `input_schema`, `skip_refinement`, `requires_confirmation`
+- **`sql_templates`**: SQL queries tied to an option via `option_id`. Executed in `execution_order`. `param_mapping` maps `$1`, `$2` etc. to `params.xxx` or `context.xxx`. `query_type` is `read` or `write`.
+- **`option_questions`**: Questions to collect params. `question_key` maps to a param name. `inline_widget` controls the input type (text, select, date_picker, etc.). `is_required` / `groupable` control flow.
+
+### TypeScript Types (`src/types/`)
+
+- **`OptionDefinition`** (`options.ts`): mirrors `option_definitions` table
+- **`SqlResult`** (`pipeline.ts`): `{ templateName, rows[], rowCount, queryType }`
+- **`FormattedResponse`** (`pipeline.ts`): `{ summary, widgets[], followUpOptionIds[] }` — the formatter output before pipeline adds widget IDs and actions
+- **`Widget`** (`api.ts`): `{ id, type: WidgetType, data, actions?, bookmarkable }` — the final widget sent to frontend
+- **`ChatMessageResponse`** (`api.ts`): full response with `widgets[]`, `followUps[]`, `defaultOptions[]`, `conversationState`
+
+## Formatter (`formatter.ts`)
+
+### Specialized vs Generic
+
+- `SPECIALIZED_FORMATTERS` map: option IDs with unique display needs get a dedicated function (e.g. `formatAdminOptionView`, `formatActivityView`)
+- Everything else → `formatGenericResponse()` which auto-generates widgets based on `target_widget` and SQL result shape
+
+### Formatter Output → Widget Pipeline
+
+1. Formatter returns `FormattedResponse` with raw widget specs
+2. `attachItemActions()` adds `actions[]` to `data_list` and `activity_card` widgets based on follow-up options that match `isChildOption()` pattern (view/edit/delete/configure/etc.)
+3. `filterEmptyWidgets()` removes widgets with no data
+4. Each widget gets a unique `id` and becomes a typed `Widget`
+5. `buildFollowUps()` creates clickable follow-up buttons from `follow_up_option_ids`
+
+### Widget Data Flags
+
+- `_noItemActions: true` in widget data → `attachItemActions` skips this widget (used for admin detail views where per-item actions don't apply)
+- `_noPin: true` in widget data → `DataListWidget` hides pin buttons and "Pin all" for this widget
+
+## `attachItemActions` Logic
+
+Takes `follow_up_option_ids`, filters to "child" options (matching `.view`, `.edit`, `.configure`, `.list`, etc.), excludes `.view`/`.details`/`.edit` (those become the list item's click handler via `viewOptionId`/`editOptionId`), and attaches the rest as icon-button actions on each list item. The icon comes from the option's `icon` field — **must exist in the frontend `iconMap`** or falls back to Zap.
+
+## `buildFollowUps` Logic
+
+Converts ALL `follow_up_option_ids` to `OptionReference[]` buttons shown below widget output. If a `resourceId` was extracted from SQL results, it's passed as a param (e.g. `{ activity_id: "xxx" }`).
+
+## Adding a New Admin View
+
+1. Add option definition in a migration (`INSERT INTO option_definitions ...`)
+2. Add SQL templates (`INSERT INTO sql_templates ...`)
+3. Optionally add a specialized formatter in `formatter.ts` → register in `SPECIALIZED_FORMATTERS`
+4. Set `_noItemActions: true` / `_noPin: true` on detail-view data_lists that shouldn't have per-item action icons
