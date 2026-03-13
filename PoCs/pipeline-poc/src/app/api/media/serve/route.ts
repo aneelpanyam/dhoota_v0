@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { isPublicMode } from "@/lib/auth/public-mode";
-import { generatePresignedReadUrl } from "@/lib/media/s3";
+import { generatePresignedReadUrl, getObjectStream } from "@/lib/media/s3";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       const db = createServiceSupabase();
       const { data: media } = await db
         .from("activity_media")
-        .select("activity_id")
+        .select("activity_id, mime_type")
         .eq("s3_key", key)
         .single();
 
@@ -29,6 +29,19 @@ export async function GET(request: NextRequest) {
           .single();
 
         if (activity) {
+          // Proxy stream instead of redirect to avoid img loading issues (CORS, redirects)
+          const stream = await getObjectStream(key);
+          if (stream) {
+            const headers: Record<string, string> = {
+              "Content-Type": (media.mime_type as string) ?? stream.contentType,
+              "Cache-Control": "public, max-age=3600",
+            };
+            if (stream.contentLength != null) {
+              headers["Content-Length"] = String(stream.contentLength);
+            }
+            return new NextResponse(stream.body, { status: 200, headers });
+          }
+          // Fallback to redirect if stream fails
           const url = await generatePresignedReadUrl(key);
           return NextResponse.redirect(url, 302);
         }

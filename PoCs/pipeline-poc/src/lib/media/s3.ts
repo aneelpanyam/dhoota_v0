@@ -45,6 +45,28 @@ export async function generatePresignedReadUrl(s3Key: string): Promise<string> {
   return getSignedUrl(getS3Client(), command, { expiresIn: 3600 });
 }
 
+/** Fetch object from S3 and return a Web ReadableStream (for NextResponse compatibility) */
+export async function getObjectStream(s3Key: string): Promise<{
+  body: ReadableStream;
+  contentType: string;
+  contentLength?: number;
+} | null> {
+  try {
+    const url = await generatePresignedReadUrl(s3Key);
+    const res = await fetch(url);
+    if (!res.ok || !res.body) return null;
+    const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+    const contentLength = res.headers.get("content-length");
+    return {
+      body: res.body,
+      contentType,
+      contentLength: contentLength ? parseInt(contentLength, 10) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function getMediaUrl(s3Key: string): string {
   return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_S3_REGION}.amazonaws.com/${s3Key}`;
 }

@@ -6,6 +6,8 @@ const PUBLIC_ALLOWED_ROUTES = [
   "/api/chat/init",
   "/api/chat/message",
   "/api/session",
+  "/api/context-filters",
+  "/api/media/serve",
 ];
 
 export async function updateSession(request: NextRequest) {

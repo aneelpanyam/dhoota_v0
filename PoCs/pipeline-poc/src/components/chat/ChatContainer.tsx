@@ -49,9 +49,17 @@ export function ChatContainer() {
 
   useEffect(() => {
     fetch("/api/context-filters")
-      .then((res) => res.json())
-      .then((data) => setContextFilters(data.filters ?? []))
-      .catch(() => setContextFilters([]));
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          console.warn("[context-filters] Request failed:", res.status, data?.error ?? res.statusText);
+        }
+        setContextFilters(data.filters ?? []);
+      })
+      .catch((err) => {
+        console.warn("[context-filters] Fetch error:", err);
+        setContextFilters([]);
+      });
   }, []);
 
   const isPublic = sessionContext?.publicMode ?? false;

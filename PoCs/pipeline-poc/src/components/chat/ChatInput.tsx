@@ -298,14 +298,21 @@ export function ChatInput({
         </>
       ) : (
         /* Collapsed: sparkles button to expand */
-        <button
-          onClick={() => setIsExpanded(true)}
-          className="flex items-center justify-center gap-2 w-full py-3 px-4 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
-          title="Ask a question"
-        >
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium">Ask a question</span>
-        </button>
+        <div className="flex items-center justify-center gap-2 w-full py-3 px-4">
+          <button
+            onClick={() => setIsExpanded(true)}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg px-3 py-2 transition"
+            title="Ask a question"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Ask a question</span>
+          </button>
+          {contextFilters && contextFilters.length > 0 && (
+            <span className="text-xs text-muted-foreground" title={`${contextFilters.length} filter${contextFilters.length !== 1 ? "s" : ""} available`}>
+              {contextFilters.length} filter{contextFilters.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

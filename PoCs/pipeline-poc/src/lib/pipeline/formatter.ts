@@ -615,9 +615,15 @@ function formatStats(
     }
   }
 
-  const summary = widgets.length > 0
-    ? "Here's an overview of your activity statistics."
-    : "No statistics available yet. Start adding activities!";
+  const isPublicStats = option.id === "public.stats";
+  const summary =
+    widgets.length > 0
+      ? isPublicStats
+        ? "Here's an overview of activity statistics."
+        : "Here's an overview of your activity statistics."
+      : isPublicStats
+        ? "No statistics available yet."
+        : "No statistics available yet. Start adding activities!";
 
   return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
 }
