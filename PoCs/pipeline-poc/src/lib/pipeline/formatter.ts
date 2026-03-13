@@ -587,12 +587,14 @@ function formatStats(
       && numericKeys.length === Object.keys(firstRow).length;
 
     if (isSingleAggregate) {
-      for (const key of numericKeys) {
-        widgets.push({
-          type: "stats_card",
-          data: { label: humanLabel(key), value: String(firstRow[key]), trend: "flat" },
-        });
-      }
+      const stats = numericKeys.map((key) => ({
+        label: humanLabel(key),
+        value: String(firstRow[key]),
+      }));
+      widgets.push({
+        type: "stats_grid",
+        data: { stats },
+      });
     } else if (result.rows.length >= 1) {
       const labelKey = Object.keys(firstRow).find((k) => typeof firstRow[k] === "string") ?? "name";
       const valueKey = Object.keys(firstRow).find((k) => typeof firstRow[k] === "number") ?? "count";

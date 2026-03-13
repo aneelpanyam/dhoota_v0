@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Send, Paperclip, X, Sparkles, Pin } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Send, Paperclip, X, Sparkles, Pin, ChevronDown } from "lucide-react";
 import type { FileReference, ConversationState } from "@/types/api";
 import { ContextStrip, type ContextItem } from "./ContextStrip";
 
@@ -54,12 +54,24 @@ export function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [isExpanded, setIsExpanded] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Default to collapsed on mobile to save space
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    setIsExpanded(!mq.matches);
+  }, []);
 
   const hasContext = contextItems.length > 0;
   const hasFilter = !!selectedFilter;
   const isInsightsMode = hasContext || hasFilter;
+
+  // Auto-expand when user pins items, selects a filter, or needs to respond
+  useEffect(() => {
+    if (isInsightsMode || conversationState !== "active") setIsExpanded(true);
+  }, [isInsightsMode, conversationState]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = text.trim();
@@ -164,113 +176,137 @@ export function ChatInput({
 
   return (
     <div className="border-t bg-background shrink-0">
-      {/* Context strip for insights mode */}
-      <ContextStrip
-        items={contextItems}
-        onRemove={onRemoveContext}
-        onClearAll={onClearContext}
-        onItemClick={onContextItemClick}
-        filters={contextFilters}
-        selectedFilter={selectedFilter}
-        onFilterSelect={onFilterSelect}
-        onClearFilter={onClearFilter}
-        onGenerateReport={onSendReport}
-        isLoading={isLoading}
-      />
+      {isExpanded ? (
+        <>
+          {/* Context strip for insights mode */}
+          <ContextStrip
+            items={contextItems}
+            onRemove={onRemoveContext}
+            onClearAll={onClearContext}
+            onItemClick={onContextItemClick}
+            filters={contextFilters}
+            selectedFilter={selectedFilter}
+            onFilterSelect={onFilterSelect}
+            onClearFilter={onClearFilter}
+            onGenerateReport={onSendReport}
+            isLoading={isLoading}
+          />
 
-      <div className="p-4">
-        <div className="mx-auto">
-          {showTextInput ? (
-            <>
-              {/* Pending files */}
-              {pendingFiles.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {pendingFiles.map((pf, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-xs"
-                    >
-                      {pf.uploading && (
-                        <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                      )}
-                      <span className="truncate max-w-32">{pf.file.name}</span>
-                      {pf.error && <span className="text-destructive">{pf.error}</span>}
-                      <button onClick={() => removeFile(i)} className="text-muted-foreground hover:text-foreground">
-                        <X className="h-3 w-3" />
-                      </button>
+          <div className="p-4">
+            <div className="mx-auto">
+              {showTextInput ? (
+                <>
+                  {/* Pending files */}
+                  {pendingFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {pendingFiles.map((pf, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-xs"
+                        >
+                          {pf.uploading && (
+                            <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                          )}
+                          <span className="truncate max-w-32">{pf.file.name}</span>
+                          {pf.error && <span className="text-destructive">{pf.error}</span>}
+                          <button onClick={() => removeFile(i)} className="text-muted-foreground hover:text-foreground">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {/* Input row */}
+                  <div className="flex items-end gap-2">
+                    {!isPublicMode && !isInsightsMode && (
+                      <>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-2.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition shrink-0"
+                          title="Attach files"
+                        >
+                          <Paperclip className="h-5 w-5" />
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*,video/*,.pdf,.doc,.docx"
+                          className="hidden"
+                          onChange={handleFileSelect}
+                        />
+                      </>
+                    )}
+
+                    <div className="flex-1 relative">
+                      <textarea
+                        ref={inputRef}
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={placeholder}
+                        rows={1}
+                        className={`w-full resize-none rounded-xl border px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 max-h-32 overflow-y-auto ${
+                          isInsightsMode
+                            ? "bg-primary/5 border-primary/30 focus:ring-primary/50"
+                            : "bg-muted/50 focus:ring-primary/50"
+                        }`}
+                        style={{ minHeight: "42px" }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleSubmit}
+                      disabled={isLoading || (!text.trim() && pendingFiles.length === 0)}
+                      className={`p-2.5 rounded-lg transition shrink-0 ${
+                        isInsightsMode
+                          ? "bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40"
+                          : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                      }`}
+                      title={isInsightsMode ? "Ask insight" : "Send"}
+                    >
+                      <Send className="h-5 w-5" />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* Guidance prompt when idle (no context pinned, conversation active) */
+                <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-muted/50 border border-dashed border-muted-foreground/20">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <Pin className="h-3.5 w-3.5 shrink-0" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Choose an option above, <span className="font-medium text-foreground/70">select a filter</span>, or pin items from results to ask questions
+                  </p>
                 </div>
               )}
-
-              {/* Input row */}
-              <div className="flex items-end gap-2">
-                {!isPublicMode && !isInsightsMode && (
-                  <>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition shrink-0"
-                      title="Attach files"
-                    >
-                      <Paperclip className="h-5 w-5" />
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept="image/*,video/*,.pdf,.doc,.docx"
-                      className="hidden"
-                      onChange={handleFileSelect}
-                    />
-                  </>
-                )}
-
-                <div className="flex-1 relative">
-                  <textarea
-                    ref={inputRef}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={placeholder}
-                    rows={1}
-                    className={`w-full resize-none rounded-xl border px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 max-h-32 overflow-y-auto ${
-                      isInsightsMode
-                        ? "bg-primary/5 border-primary/30 focus:ring-primary/50"
-                        : "bg-muted/50 focus:ring-primary/50"
-                    }`}
-                    style={{ minHeight: "42px" }}
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <button
-                  onClick={handleSubmit}
-                  disabled={isLoading || (!text.trim() && pendingFiles.length === 0)}
-                  className={`p-2.5 rounded-lg transition shrink-0 ${
-                    isInsightsMode
-                      ? "bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40"
-                      : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40"
-                  }`}
-                  title={isInsightsMode ? "Ask insight" : "Send"}
-                >
-                  <Send className="h-5 w-5" />
-                </button>
-              </div>
-            </>
-          ) : (
-            /* Guidance prompt when idle (no context pinned, conversation active) */
-            <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-muted/50 border border-dashed border-muted-foreground/20">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <Sparkles className="h-4 w-4 shrink-0" />
-                <Pin className="h-3.5 w-3.5 shrink-0" />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Choose an option above, <span className="font-medium text-foreground/70">select a filter</span>, or pin items from results to ask questions
-              </p>
             </div>
-          )}
-        </div>
-      </div>
+
+            {/* Collapse button */}
+            <button
+              onClick={() => setIsExpanded(false)}
+              className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 text-xs text-muted-foreground hover:text-foreground transition"
+              title="Collapse query box"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+              <span>Collapse</span>
+            </button>
+          </div>
+        </>
+      ) : (
+        /* Collapsed: sparkles button to expand */
+        <button
+          onClick={() => setIsExpanded(true)}
+          className="flex items-center justify-center gap-2 w-full py-3 px-4 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
+          title="Ask a question"
+        >
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Ask a question</span>
+        </button>
+      )}
     </div>
   );
 }

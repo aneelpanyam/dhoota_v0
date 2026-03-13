@@ -111,12 +111,12 @@ export function ActivityTimelineView({ items, actions, onAction }: Props) {
         {groupedByDate.map((group) => (
           <div key={group.dateKey}>
             {/* Date header */}
-            <div className="flex items-center gap-3 py-2 relative z-10">
-              <div className="w-10 h-10 rounded-full bg-muted border-2 border-background flex items-center justify-center shrink-0">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-2 md:gap-3 py-1.5 md:py-2 relative z-10">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-muted border-2 border-background flex items-center justify-center shrink-0">
+                <Calendar className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
               </div>
-              <div>
-                <span className="text-sm font-semibold">{group.label}</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs md:text-sm font-semibold">{group.label}</span>
                 {group.label !== format(parseISO(group.date), "MMMM d, yyyy") && (
                   <span className="text-[10px] text-muted-foreground ml-2">
                     {format(parseISO(group.date), "MMM d, yyyy")}
@@ -147,17 +147,17 @@ export function ActivityTimelineView({ items, actions, onAction }: Props) {
                     {/* Connector dot */}
                     <div className={`absolute -left-[25px] top-3 w-2.5 h-2.5 rounded-full border-2 border-background ${cfg.bg}`} />
 
-                    <div className="rounded-lg border bg-card p-3 hover:shadow-sm hover:border-primary/20 transition-all">
-                      <div className="flex gap-3">
+                    <div className="rounded-lg border bg-card p-2.5 md:p-3 hover:shadow-sm hover:border-primary/20 transition-all">
+                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                         {thumbUrl && (
-                          <div className="w-14 h-14 rounded-md overflow-hidden shrink-0 bg-muted">
+                          <div className="w-full sm:w-14 h-24 sm:h-14 rounded-md overflow-hidden shrink-0 bg-muted">
                             <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
                           </div>
                         )}
                         <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
                             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${cfg.color}`} />
-                            <span className="text-sm font-medium truncate group-hover:text-primary transition">
+                            <span className="text-sm font-medium line-clamp-2 group-hover:text-primary transition break-words">
                               {act.title}
                             </span>
                             <Eye className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition shrink-0 ml-auto" />
@@ -214,21 +214,21 @@ export function ActivityTimelineView({ items, actions, onAction }: Props) {
 
         {noDateItems.length > 0 && (
           <div>
-            <div className="flex items-center gap-3 py-2 relative z-10">
-              <div className="w-10 h-10 rounded-full bg-muted/60 border-2 border-background flex items-center justify-center shrink-0">
-                <Circle className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-2 md:gap-3 py-1.5 md:py-2 relative z-10">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-muted/60 border-2 border-background flex items-center justify-center shrink-0">
+                <Circle className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
               </div>
-              <span className="text-sm font-semibold text-muted-foreground">No date set</span>
+              <span className="text-xs md:text-sm font-semibold text-muted-foreground">No date set</span>
             </div>
             <div className="ml-[19px] pl-6 space-y-2 pb-2">
               {noDateItems.map((act) => (
                 <button
                   key={act.id}
                   onClick={() => handleViewActivity(act.id)}
-                  className="w-full text-left rounded-lg border bg-card p-3 hover:shadow-sm hover:border-primary/20 transition-all group"
+                  className="w-full text-left rounded-lg border bg-card p-2.5 md:p-3 hover:shadow-sm hover:border-primary/20 transition-all group"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate group-hover:text-primary transition">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium line-clamp-2 group-hover:text-primary transition break-words">
                       {act.title}
                     </span>
                     <Eye className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition shrink-0 ml-auto" />

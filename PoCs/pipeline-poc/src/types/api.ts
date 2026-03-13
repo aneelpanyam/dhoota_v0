@@ -96,6 +96,7 @@ export type WidgetType =
   | "timeline"
   | "chart"
   | "stats_card"
+  | "stats_grid"
   | "media_gallery"
   | "tag_cloud"
   | "summary"

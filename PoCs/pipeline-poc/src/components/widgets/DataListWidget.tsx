@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { Widget, WidgetAction } from "@/types/api";
 import type { ContextItem } from "@/components/chat/ContextStrip";
 import {
@@ -10,6 +11,7 @@ import {
   UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
   ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
   Smartphone, Zap, Clock, BarChart3, Bookmark, ExternalLink,
+  MoreVertical,
 } from "lucide-react";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
@@ -121,6 +123,20 @@ const VIEW_MODES: { id: ActivityViewMode; label: string; icon: React.ComponentTy
 export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, onPinToContext }: Props) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ActivityViewMode>("list");
+  const [viewModeDropdownOpen, setViewModeDropdownOpen] = useState(false);
+  const viewModeDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewModeDropdownRef.current && !viewModeDropdownRef.current.contains(e.target as Node)) {
+        setViewModeDropdownOpen(false);
+      }
+    };
+    if (viewModeDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [viewModeDropdownOpen]);
   const d = widget.data;
   const items = (d.items as Record<string, unknown>[]) ?? [];
   const columns = (d.columns as { key: string; label: string }[]) ?? [];
@@ -153,27 +169,75 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
     <div className="rounded-xl border bg-card overflow-hidden">
       {/* View mode tabs for activity lists */}
       {hasActivityFields && items.length > 0 && (
-        <div className="flex items-center gap-0.5 px-3 pt-3 pb-1">
-          {VIEW_MODES.map((mode) => {
-            const Icon = mode.icon;
-            const isActive = viewMode === mode.id;
-            return (
-              <button
-                key={mode.id}
-                onClick={() => setViewMode(mode.id)}
-                className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-                  ${isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }
-                `}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {mode.label}
-              </button>
-            );
-          })}
+        <div className="px-3 pt-3 pb-1">
+          {/* Mobile: dropdown */}
+          <div ref={viewModeDropdownRef} className="relative md:hidden">
+            <button
+              onClick={() => setViewModeDropdownOpen((v) => !v)}
+              className="flex items-center justify-between w-full gap-2 px-3 py-2 rounded-lg border bg-card text-sm font-medium hover:bg-muted/50 transition"
+            >
+              {(() => {
+                const mode = VIEW_MODES.find((m) => m.id === viewMode);
+                const Icon = mode?.icon ?? List;
+                return (
+                  <>
+                    <span className="flex items-center gap-1.5">
+                      <Icon className="h-3.5 w-3.5" />
+                      {mode?.label ?? "List"}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 transition ${viewModeDropdownOpen ? "rotate-180" : ""}`} />
+                  </>
+                );
+              })()}
+            </button>
+            {viewModeDropdownOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 py-1 rounded-lg border bg-card shadow-lg z-50">
+                {VIEW_MODES.map((mode) => {
+                  const Icon = mode.icon;
+                  const isActive = viewMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      onClick={() => {
+                        setViewMode(mode.id);
+                        setViewModeDropdownOpen(false);
+                      }}
+                      className={`
+                        w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition
+                        ${isActive ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted"}
+                      `}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {/* Desktop: horizontal tabs */}
+          <div className="hidden md:flex items-center gap-0.5">
+            {VIEW_MODES.map((mode) => {
+              const Icon = mode.icon;
+              const isActive = viewMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setViewMode(mode.id)}
+                  className={`
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
+                    ${isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }
+                  `}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -211,7 +275,10 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
         <>
           <div className="divide-y">
             {items.map((item, idx) => (
-              <div key={item.id as string ?? idx} className="px-4 py-3 hover:bg-muted/30 transition">
+              <div
+                key={item.id as string ?? idx}
+                className={`py-3 hover:bg-muted/30 transition ${hasActivityFields ? "px-0" : "px-4"}`}
+              >
                 {editingItemId === item.id ? (
                   <EditActivityFormWidget
                     activity={{
@@ -362,89 +429,107 @@ function ActivityListItem({
   };
 
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex flex-col md:flex-row md:items-start gap-0 md:gap-3 w-full">
+      {/* Mobile: banner image at top - matches activity details MediaGrid single-image layout */}
       {thumbUrl && (
         <div
-          className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-muted cursor-pointer"
+          className="md:hidden w-full aspect-video overflow-hidden bg-muted cursor-pointer"
           onClick={handleViewClick}
         >
           <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
         </div>
       )}
-      <div className="flex-1 min-w-0 space-y-1 cursor-pointer" onClick={handleViewClick}>
-        <div className="flex items-center gap-2">
-          <p className="font-medium text-sm truncate hover:text-primary transition">{title}</p>
-          {status && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${statusColors[status] ?? "bg-gray-100"}`}>
-              {status.replace("_", " ")}
-            </span>
+      <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-3 flex-1 min-w-0 w-full p-4">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
+          {/* Desktop: thumbnail on left */}
+          {thumbUrl && (
+            <div
+              className="hidden md:block w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-muted cursor-pointer"
+              onClick={handleViewClick}
+            >
+              <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+            </div>
           )}
-        </div>
+          <div className="flex-1 min-w-0 space-y-1 cursor-pointer" onClick={handleViewClick}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-sm line-clamp-2 md:line-clamp-none md:truncate hover:text-primary transition break-words">{title}</p>
+              {status && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${statusColors[status] ?? "bg-gray-100"}`}>
+                  {status.replace("_", " ")}
+                </span>
+              )}
+            </div>
 
-        {description && (
-          <p className="text-xs text-muted-foreground line-clamp-1">{description}</p>
-        )}
+            {description && (
+              <p className="text-xs text-muted-foreground line-clamp-1">{description}</p>
+            )}
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          {date && (
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-            </span>
-          )}
-          {location && (
-            <span className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              {location}
-            </span>
-          )}
-          {mediaCount > 0 && (
-            <span className="flex items-center gap-1">
-              <ImageIcon className="h-3 w-3" />
-              {mediaCount}
-            </span>
-          )}
-          {noteCount > 0 && (
-            <span className="flex items-center gap-1">
-              <MessageSquare className="h-3 w-3" />
-              {noteCount}
-            </span>
-          )}
-        </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {date && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              )}
+              {location && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {location}
+                </span>
+              )}
+              {mediaCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <ImageIcon className="h-3 w-3" />
+                  {mediaCount}
+                </span>
+              )}
+              {noteCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  {noteCount}
+                </span>
+              )}
+            </div>
 
-        {tags.length > 0 && (
-          <div className="flex gap-1 flex-wrap">
-            {tags.slice(0, 4).map((tag) => (
-              <span
-                key={tag.name}
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted"
-                style={{ color: tag.color }}
-              >
-                {tag.name}
-              </span>
-            ))}
-            {tags.length > 4 && (
-              <span className="text-[10px] text-muted-foreground">+{tags.length - 4}</span>
+            {tags.length > 0 && (
+              <div className="flex gap-1 flex-wrap">
+                {tags.slice(0, 4).map((tag, i) => (
+                  <span
+                    key={tag.name}
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full bg-muted ${i === 3 ? "hidden md:inline-flex" : ""}`}
+                    style={{ color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {tags.length > 3 && <span className="text-[10px] text-muted-foreground md:hidden">+{tags.length - 3}</span>}
+                {tags.length > 4 && <span className="text-[10px] text-muted-foreground hidden md:inline">+{tags.length - 4}</span>}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="flex gap-1 shrink-0">
-        {onPinToContext && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const activityId = item.id as string | undefined;
-              onPinToContext(buildContextItem(item, columns, activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined));
-            }}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition"
-            title="Pin to context for insights"
-          >
-            <Pin className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <ItemActions actions={actions} item={item} onAction={onAction} onEdit={onEdit} />
+        <div className="flex gap-1 shrink-0 items-center justify-end md:justify-start">
+          {onPinToContext && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const activityId = item.id as string | undefined;
+                onPinToContext(buildContextItem(item, columns, activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined));
+              }}
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition"
+              title="Pin to context for insights"
+            >
+              <Pin className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <div className="hidden md:flex">
+            <ItemActions actions={actions} item={item} onAction={onAction} onEdit={onEdit} variant="inline" />
+          </div>
+          <div className="md:hidden">
+            <ItemActions actions={actions} item={item} onAction={onAction} onEdit={onEdit} variant="dropdown" />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -985,43 +1070,104 @@ function ItemActions({
   item,
   onAction,
   onEdit,
+  variant = "inline",
 }: {
   actions?: WidgetAction[];
   item: Record<string, unknown>;
   onAction: (action: WidgetAction) => void;
   onEdit: () => void;
+  variant?: "inline" | "dropdown";
 }) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inTrigger = dropdownRef.current?.contains(target);
+      const inPortal = (target as Element).closest?.(".item-actions-portal");
+      if (!inTrigger && !inPortal) setDropdownOpen(false);
+    };
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [dropdownOpen]);
+
+  useEffect(() => {
+    if (variant === "dropdown" && dropdownOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setDropdownRect({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    } else {
+      setDropdownRect(null);
+    }
+  }, [variant, dropdownOpen]);
+
   if (!actions || actions.length === 0) return null;
+
+  const renderActionButton = (action: WidgetAction, ai: number) => {
+    const Icon = iconMap[action.icon] ?? Zap;
+    const isEdit = action.optionId === "activity.edit";
+    return (
+      <button
+        key={ai}
+        onClick={(e) => {
+          e.stopPropagation();
+          setDropdownOpen(false);
+          if (isEdit) {
+            onEdit();
+          } else {
+            onAction({
+              ...action,
+              targetResourceId: item.id as string,
+              params: action.paramKey
+                ? { [action.paramKey]: item.id, ...action.params }
+                : { ...action.params },
+            });
+          }
+        }}
+        className={variant === "dropdown"
+          ? "w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted transition"
+          : "p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
+        }
+        title={action.label}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        {variant === "dropdown" && <span>{action.label}</span>}
+      </button>
+    );
+  };
+
+  if (variant === "dropdown") {
+    return (
+      <div ref={dropdownRef} className="relative">
+        <button
+          ref={triggerRef}
+          onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
+          title="More actions"
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </button>
+        {dropdownOpen && dropdownRect &&
+          createPortal(
+            <div
+              className="item-actions-portal fixed py-1 rounded-lg border bg-card shadow-lg z-[9999] min-w-[180px]"
+              style={{ top: dropdownRect.top, right: dropdownRect.right }}
+            >
+              {actions.map((action, ai) => renderActionButton(action, ai))}
+            </div>,
+            document.body
+          )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-1 shrink-0">
-      {actions.map((action, ai) => {
-        const Icon = iconMap[action.icon] ?? Zap;
-        const isEdit = action.optionId === "activity.edit";
-        return (
-          <button
-            key={ai}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isEdit) {
-                onEdit();
-              } else {
-                onAction({
-                  ...action,
-                  targetResourceId: item.id as string,
-                  params: action.paramKey
-                    ? { [action.paramKey]: item.id, ...action.params }
-                    : { ...action.params },
-                });
-              }
-            }}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
-            title={action.label}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </button>
-        );
-      })}
+      {actions.map((action, ai) => renderActionButton(action, ai))}
     </div>
   );
 }

@@ -81,7 +81,7 @@ export function DebugPanel({ conversationId }: DebugPanelProps) {
       {/* Floating bubble */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`fixed bottom-20 right-6 z-50 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 ${
+        className={`hidden md:flex fixed bottom-20 right-6 z-50 w-12 h-12 rounded-full shadow-lg items-center justify-center transition-all hover:scale-105 ${
           isOpen
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-muted-foreground hover:bg-muted/80"

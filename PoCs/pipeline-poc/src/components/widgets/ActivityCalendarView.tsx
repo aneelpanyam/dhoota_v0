@@ -49,6 +49,7 @@ const statusBgColor: Record<string, string> = {
 };
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
 
 export function ActivityCalendarView({ items, actions, onAction }: Props) {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
@@ -108,15 +109,15 @@ export function ActivityCalendarView({ items, actions, onAction }: Props) {
   return (
     <div className="space-y-3">
       {/* Month navigation + stats */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="flex items-center justify-between md:justify-start gap-2">
           <button
             onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
             className="p-1.5 rounded-lg hover:bg-muted transition"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h3 className="text-sm font-semibold min-w-[140px] text-center">
+          <h3 className="text-sm font-semibold min-w-[120px] md:min-w-[140px] text-center">
             {format(currentMonth, "MMMM yyyy")}
           </h3>
           <button
@@ -126,7 +127,7 @@ export function ActivityCalendarView({ items, actions, onAction }: Props) {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground md:ml-0">
           <span>{monthStats.total} activit{monthStats.total !== 1 ? "ies" : "y"}</span>
           <span className="opacity-40">·</span>
           <span>{monthStats.daysWithActivities} active day{monthStats.daysWithActivities !== 1 ? "s" : ""}</span>
@@ -137,9 +138,10 @@ export function ActivityCalendarView({ items, actions, onAction }: Props) {
       <div className="rounded-lg border overflow-hidden">
         {/* Weekday header */}
         <div className="grid grid-cols-7 bg-muted/50">
-          {WEEKDAYS.map((day) => (
-            <div key={day} className="text-center text-[10px] font-medium text-muted-foreground py-1.5">
-              {day}
+          {WEEKDAYS.map((day, i) => (
+            <div key={day} className="text-center font-medium text-muted-foreground py-1 md:py-1.5">
+              <span className="text-[9px] md:hidden">{WEEKDAYS_SHORT[i]}</span>
+              <span className="hidden md:inline text-[10px]">{day}</span>
             </div>
           ))}
         </div>
@@ -158,7 +160,7 @@ export function ActivityCalendarView({ items, actions, onAction }: Props) {
                 key={i}
                 onClick={() => setSelectedDate(isSelected ? null : day)}
                 className={`
-                  relative min-h-[52px] p-1 border-t border-r text-left transition-all
+                  relative min-h-[44px] md:min-h-[52px] p-1 border-t border-r text-left transition-all
                   ${!inMonth ? "opacity-30" : ""}
                   ${isSelected ? "bg-primary/5 ring-1 ring-primary/30" : "hover:bg-muted/40"}
                   ${i % 7 === 0 ? "border-l-0" : ""}
@@ -231,8 +233,8 @@ export function ActivityCalendarView({ items, actions, onAction }: Props) {
                   onClick={() => handleViewActivity(act.id)}
                   className={`w-full text-left px-3 py-2.5 hover:bg-muted/30 transition border-l-2 ${statusBgColor[act.status ?? ""] ?? "border-gray-200"}`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate flex-1">{act.title}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium line-clamp-2 md:line-clamp-none md:truncate flex-1 break-words">{act.title}</span>
                     <Eye className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   </div>
                   {act.description && (

@@ -8,6 +8,7 @@ import { DataListWidget } from "./DataListWidget";
 import { DataTableWidget } from "./DataTableWidget";
 import { ChartWidget } from "./ChartWidget";
 import { StatsCardWidget } from "./StatsCardWidget";
+import { StatsGridWidget } from "./StatsGridWidget";
 import { MediaGalleryWidget } from "./MediaGalleryWidget";
 import { ConfirmationCardWidget } from "./ConfirmationCardWidget";
 import { QuestionCardWidget } from "./QuestionCardWidget";
@@ -40,6 +41,7 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   data_table: DataTableWidget,
   chart: ChartWidget,
   stats_card: StatsCardWidget,
+  stats_grid: StatsGridWidget,
   media_gallery: MediaGalleryWidget,
   confirmation_card: ConfirmationCardWidget,
   question_card: QuestionCardWidget,

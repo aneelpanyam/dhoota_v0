@@ -111,18 +111,20 @@ export function ActivityStatsBar({ items }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Quick stat cards */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* Quick stat cards - compact single-line layout like Summary view */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (
             <div
               key={card.label}
-              className="rounded-lg border bg-card p-2.5 text-center space-y-0.5"
+              className="rounded-lg border bg-card p-2.5 flex items-center gap-2 min-w-0"
             >
-              <Icon className={`h-4 w-4 mx-auto ${card.color}`} />
-              <div className="text-lg font-bold leading-tight">{card.value}</div>
-              <div className="text-[10px] text-muted-foreground">{card.label}</div>
+              <Icon className={`h-4 w-4 shrink-0 ${card.color}`} />
+              <div className="min-w-0 flex-1">
+                <span className="text-base font-bold leading-tight">{card.value}</span>
+                <span className="text-[10px] text-muted-foreground ml-1">{card.label}</span>
+              </div>
             </div>
           );
         })}
@@ -178,7 +180,7 @@ export function ActivityStatsBar({ items }: Props) {
       )}
 
       {/* Top tags + locations */}
-      <div className="flex gap-3">
+      <div className="flex flex-col md:flex-row gap-3">
         {stats.topTags.length > 0 && (
           <div className="flex-1 space-y-1">
             <div className="flex items-center gap-1 text-[11px] text-muted-foreground">

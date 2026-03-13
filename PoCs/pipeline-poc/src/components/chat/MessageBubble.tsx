@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
-import type { WidgetAction } from "@/types/api";
+import type { WidgetAction, ChatMessageResponse, OptionReference } from "@/types/api";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, Bookmark, Sparkles } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
@@ -155,82 +155,13 @@ export function MessageBubble({
           />
         ))}
 
-        {response.followUps.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {response.followUps.map((fu) => {
-              // For entity edits (e.g. Edit), pass context from widgets so it shows above the user message (like pinned queries)
-              const activityId = fu.params?.activity_id as string | undefined;
-              const activityCard = activityId
-                ? response.widgets?.find(
-                    (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
-                  )?.data
-                : undefined;
-              const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
-              const contextItems = activityCard?.title
-                ? [
-                    {
-                      entityType: "activity",
-                      entityId: (activityCard.id as string) ?? activityId!,
-                      label: (activityCard.title as string) ?? "Activity",
-                      summary:
-                        [activityCard.status, activityDate].filter(Boolean).length > 0
-                          ? [
-                              activityCard.status,
-                              activityDate
-                                ? new Date(activityDate as string).toLocaleDateString("en-IN", {
-                                    day: "numeric",
-                                    month: "short",
-                                    year: "numeric",
-                                  })
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : "",
-                      viewAction: {
-                        optionId: "activity.view",
-                        params: { activity_id: (activityCard.id as string) ?? activityId! },
-                      },
-                    },
-                  ]
-                : undefined;
-              return (
-                <button
-                  key={fu.optionId}
-                  onClick={() =>
-                    onOptionSelect(fu.optionId, {
-                      ...fu.params,
-                      ...(contextItems && { __contextItems: contextItems }),
-                    })
-                  }
-                  className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
-                >
-                  {fu.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <NextActionsSection
+          response={response}
+          isLastMessage={!!isLastMessage}
+          onOptionSelect={onOptionSelect}
+        />
 
         {response.traceId && <TraceIdBadge traceId={response.traceId} />}
-
-        {isLastMessage &&
-          response.followUps.length === 0 &&
-          response.conversationState === "active" &&
-          response.defaultOptions.length > 0 &&
-          !response.widgets.some((w) => w.type === "default_options_menu") && (
-          <div className="flex flex-wrap gap-2 pt-2">
-            {response.defaultOptions.map((opt) => (
-              <button
-                key={opt.optionId}
-                onClick={() => onOptionSelect(opt.optionId, opt.params)}
-                className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
-              >
-                {opt.name}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       <div className="flex items-start gap-0.5 pt-1 shrink-0">
         {onToggleBookmark && (
@@ -247,6 +178,196 @@ export function MessageBubble({
           </button>
         )}
         {hideToggle}
+      </div>
+    </div>
+  );
+}
+
+function NextActionsSection({
+  response,
+  isLastMessage,
+  onOptionSelect,
+}: {
+  response: ChatMessageResponse;
+  isLastMessage: boolean;
+  onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const showDefaultOptions =
+    isLastMessage &&
+    response.followUps.length === 0 &&
+    response.conversationState === "active" &&
+    response.defaultOptions.length > 0 &&
+    !response.widgets.some((w) => w.type === "default_options_menu");
+
+  const hasFollowUps = response.followUps.length > 0;
+  const hasDefaultOpts = showDefaultOptions;
+  const hasAny = hasFollowUps || hasDefaultOpts;
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [dropdownOpen]);
+
+  if (!hasAny) return null;
+
+  const renderFollowUp = (fu: OptionReference) => {
+    const activityId = fu.params?.activity_id as string | undefined;
+    const activityCard = activityId
+      ? response.widgets?.find(
+          (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
+        )?.data
+      : undefined;
+    const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
+    const contextItems = activityCard?.title
+      ? [
+          {
+            entityType: "activity",
+            entityId: (activityCard.id as string) ?? activityId!,
+            label: (activityCard.title as string) ?? "Activity",
+            summary:
+              [activityCard.status, activityDate].filter(Boolean).length > 0
+                ? [
+                    activityCard.status,
+                    activityDate
+                      ? new Date(activityDate as string).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "",
+            viewAction: {
+              optionId: "activity.view",
+              params: { activity_id: (activityCard.id as string) ?? activityId! },
+            },
+          },
+        ]
+      : undefined;
+    return (
+      <button
+        key={fu.optionId}
+        onClick={() => {
+          setDropdownOpen(false);
+          onOptionSelect(fu.optionId, {
+            ...fu.params,
+            ...(contextItems && { __contextItems: contextItems }),
+          });
+        }}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted transition"
+      >
+        {fu.name}
+      </button>
+    );
+  };
+
+  const renderDefaultOpt = (opt: OptionReference) => (
+    <button
+      key={opt.optionId}
+      onClick={() => {
+        setDropdownOpen(false);
+        onOptionSelect(opt.optionId, opt.params);
+      }}
+      className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted transition"
+    >
+      {opt.name}
+    </button>
+  );
+
+  return (
+    <div className="pt-1">
+      {/* Desktop: inline buttons */}
+      <div className="hidden md:flex flex-wrap gap-2">
+        {hasFollowUps &&
+          response.followUps.map((fu) => {
+            const activityId = fu.params?.activity_id as string | undefined;
+            const activityCard = activityId
+              ? response.widgets?.find(
+                  (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
+                )?.data
+              : undefined;
+            const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
+            const contextItems = activityCard?.title
+              ? [
+                  {
+                    entityType: "activity",
+                    entityId: (activityCard.id as string) ?? activityId!,
+                    label: (activityCard.title as string) ?? "Activity",
+                    summary:
+                      [activityCard.status, activityDate].filter(Boolean).length > 0
+                        ? [
+                            activityCard.status,
+                            activityDate
+                              ? new Date(activityDate as string).toLocaleDateString("en-IN", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : "",
+                    viewAction: {
+                      optionId: "activity.view",
+                      params: { activity_id: (activityCard.id as string) ?? activityId! },
+                    },
+                  },
+                ]
+              : undefined;
+            return (
+              <button
+                key={fu.optionId}
+                onClick={() =>
+                  onOptionSelect(fu.optionId, {
+                    ...fu.params,
+                    ...(contextItems && { __contextItems: contextItems }),
+                  })
+                }
+                className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
+              >
+                {fu.name}
+              </button>
+            );
+          })}
+        {hasDefaultOpts &&
+          response.defaultOptions.map((opt) => (
+            <button
+              key={opt.optionId}
+              onClick={() => onOptionSelect(opt.optionId, opt.params)}
+              className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
+            >
+              {opt.name}
+            </button>
+          ))}
+      </div>
+      {/* Mobile: dropdown */}
+      <div ref={dropdownRef} className="md:hidden relative">
+        <button
+          onClick={() => setDropdownOpen((v) => !v)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/5 transition text-sm"
+        >
+          Next actions
+          <ChevronDown className={`h-3 w-3 transition ${dropdownOpen ? "rotate-180" : ""}`} />
+        </button>
+        {dropdownOpen && (
+          <div className="absolute left-0 top-full mt-1 py-1 rounded-lg border bg-card shadow-lg z-50 min-w-[200px] overflow-hidden">
+            {hasFollowUps && response.followUps.map((fu) => renderFollowUp(fu))}
+            {hasDefaultOpts && response.defaultOptions.map((opt) => renderDefaultOpt(opt))}
+          </div>
+        )}
       </div>
     </div>
   );
