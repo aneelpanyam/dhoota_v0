@@ -14,6 +14,7 @@ import {
   MoreVertical, Tags, Share2, Megaphone, CreditCard, Globe, Settings,
   HelpCircle, LayoutGrid, Info,
 } from "lucide-react";
+import Markdown from "react-markdown";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
 import { ActivityTimelineView } from "./ActivityTimelineView";
@@ -160,6 +161,13 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
   const hasTagFields = items.length > 0 && ("color" in items[0] && "source" in items[0]);
   const hasBookmarkFields = items.length > 0 && "_entity_type_raw" in items[0];
   const hasNoteFields = items.length > 0 && "_is_note" in items[0] && "content" in items[0];
+  const hasAnnouncementFields =
+    items.length > 0 &&
+    "title" in items[0] &&
+    "content" in items[0] &&
+    !("_is_note" in items[0]) &&
+    !("activity_date" in items[0]) &&
+    ("published_at" in items[0] || "created_at" in items[0]);
 
   if (items.length === 0) {
     return (
@@ -307,6 +315,17 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     onPinToContext={effectiveOnPinToContextItems}
                     columns={columns}
                   />
+                ) : hasAnnouncementFields ? (
+                  <AnnouncementListItem
+                    item={item}
+                    actions={widget.actions}
+                    onAction={onAction}
+                    onOptionSelect={onOptionSelect}
+                    onPinToContext={effectiveOnPinToContextItems}
+                    columns={columns}
+                    viewOptionId={viewOptionId}
+                    viewParamKey={viewParamKey}
+                  />
                 ) : hasBookmarkFields ? (
                   <BookmarkListItem
                     item={item}
@@ -367,7 +386,13 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                 </div>
               </>
             ) : (
-              <span>{totalItems} item{totalItems !== 1 ? "s" : ""}</span>
+              <span>
+                {hasActivityFields
+                  ? `${totalItems} of My Public Activities`
+                  : hasAnnouncementFields
+                    ? totalItems !== 1 ? `${totalItems} Public Announcements` : "1 Public Announcement"
+                    : `${totalItems} item${totalItems !== 1 ? "s" : ""}`}
+              </span>
             )}
             {effectiveOnPinToContextCollection && items.length > 0 && (
               <button
@@ -688,6 +713,114 @@ function NoteListItem({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function AnnouncementListItem({
+  item,
+  actions,
+  onAction,
+  onOptionSelect,
+  onPinToContext,
+  columns,
+  viewOptionId,
+  viewParamKey,
+}: {
+  item: Record<string, unknown>;
+  actions?: WidgetAction[];
+  onAction: (action: WidgetAction) => void;
+  onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
+  onPinToContext?: (item: ContextItem) => void;
+  columns: { key: string; label: string }[];
+  viewOptionId?: string;
+  viewParamKey?: string;
+}) {
+  const title = (item.title as string) ?? "Untitled";
+  const content = (item.content as string) ?? "";
+  const pinned = item.pinned === true || item.pinned === "true";
+  const publishedAt = (item.published_at ?? item.publishedAt ?? item.created_at ?? item.createdAt) as string | undefined;
+
+  const isClickable = !!viewOptionId && !!item.id;
+  const paramKey = viewParamKey ?? "announcement_id";
+  const paramValue = item[paramKey] ?? item.id;
+
+  const handleClick = () => {
+    if (!isClickable || !item.id) return;
+    onOptionSelect?.(viewOptionId!, { [paramKey]: paramValue });
+  };
+
+  return (
+    <div
+      className={`space-y-2 ${isClickable ? "cursor-pointer" : ""} ${pinned ? "pl-2 border-l-2 border-amber-400/60" : ""}`}
+      onClick={isClickable ? handleClick : undefined}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {pinned && (
+              <span title="Pinned" className="shrink-0">
+                <Pin className="h-3.5 w-3.5 text-amber-500 inline" />
+              </span>
+            )}
+            <h3 className="font-semibold text-base text-foreground leading-snug">{title}</h3>
+          </div>
+          {publishedAt && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {new Date(publishedAt).toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </p>
+          )}
+        </div>
+        {onPinToContext && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const viewAction = viewOptionId && item.id
+                ? { optionId: viewOptionId, params: viewParamKey ? { [viewParamKey]: item.id } : { announcement_id: item.id } }
+                : undefined;
+              onPinToContext(buildContextItem(item, columns, viewAction));
+            }}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition shrink-0"
+            title="Pin to context for insights"
+          >
+            <Pin className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {content && (
+        <div className="text-sm text-foreground/90 prose prose-sm max-w-none dark:prose-invert">
+          <Markdown>{content}</Markdown>
+        </div>
+      )}
+      {actions && actions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1" onClick={(e) => e.stopPropagation()}>
+          {actions.map((action, i) => {
+            const Icon = iconMap[action.icon] ?? Zap;
+            return (
+              <button
+                key={i}
+                onClick={() =>
+                  onAction({
+                    ...action,
+                    targetResourceId: item.id as string,
+                    params: action.paramKey
+                      ? { [action.paramKey]: item.id, ...action.params }
+                      : { ...action.params },
+                  })
+                }
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

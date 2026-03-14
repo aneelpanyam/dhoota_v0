@@ -7,6 +7,10 @@ import {
   CalendarDays,
   Calendar,
   Clock,
+  Megaphone,
+  CreditCard,
+  MessageSquare,
+  User,
 } from "lucide-react";
 
 interface StatItem {
@@ -20,6 +24,10 @@ const ICON_MAP: Record<string, { icon: typeof Activity; color: string }> = {
   planned: { icon: Clock, color: "text-blue-500" },
   this_week: { icon: CalendarDays, color: "text-blue-500" },
   this_month: { icon: Calendar, color: "text-purple-500" },
+  announcements: { icon: Megaphone, color: "text-amber-500" },
+  info_cards: { icon: CreditCard, color: "text-indigo-500" },
+  welcome_messages: { icon: MessageSquare, color: "text-teal-500" },
+  avatar: { icon: User, color: "text-slate-500" },
 };
 
 function iconForLabel(label: string) {

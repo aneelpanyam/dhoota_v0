@@ -43,7 +43,57 @@ const SPECIALIZED_FORMATTERS: Record<
   "admin.announcement.view": formatAnnouncementView,
   "admin.info_card.view": formatInfoCardView,
   "public.about": formatPublicAbout,
+  "public_site.welcome_message.view": formatWelcomeMessageView,
+  "profile.set_avatar": formatProfileSetAvatar,
 };
+
+function formatProfileSetAvatar(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const writeResult = sqlResults.find((r) => r.queryType === "write");
+  const row = writeResult?.rows[0];
+  return {
+    summary: "Profile picture updated.",
+    widgets: [{
+      type: "text_response",
+      data: {
+        text: row
+          ? "Your profile picture has been updated successfully."
+          : "Profile picture updated.",
+      },
+    }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatWelcomeMessageView(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const result = sqlResults.find((r) => r.templateName === "get_welcome_message");
+  const row = result?.rows[0];
+  if (!row) {
+    return {
+      summary: "Welcome message not found.",
+      widgets: [{ type: "text_response", data: { text: "This welcome message could not be found." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const text = (row.message_text as string) ?? "";
+  const bannerUrl = row.banner_url as string | null | undefined;
+  const bannerImageUrl =
+    bannerUrl && bannerUrl.trim()
+      ? bannerUrl.startsWith("http")
+        ? bannerUrl
+        : `/api/media/serve?key=${encodeURIComponent(bannerUrl)}`
+      : undefined;
+  return {
+    summary: "Here is the welcome message.",
+    widgets: [{ type: "welcome_message", data: { text, bannerImageUrl } }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
 
 export async function formatResponse(
   option: OptionDefinition | null,
@@ -86,6 +136,10 @@ const LABEL_MAP: Record<string, string> = {
   total_activities: "Total Activities",
   this_month: "This Month",
   this_week: "This Week",
+  announcement_count: "Announcements",
+  info_card_count: "Info Cards",
+  welcome_message_count: "Welcome Messages",
+  avatar_set: "Avatar",
   total_input_tokens: "Input Tokens",
   total_output_tokens: "Output Tokens",
   total_cost: "Total Cost",
@@ -183,7 +237,7 @@ export function deriveItemActions(
   function paramKeyFromOptionId(optionId: string): string {
     const parts = optionId.split(".");
     parts.pop();
-    if (["admin", "public", "citizen"].includes(parts[0])) parts.shift();
+    if (["admin", "public", "citizen", "public_site"].includes(parts[0])) parts.shift();
     return `${parts.join("_")}_id`;
   }
 
@@ -703,9 +757,13 @@ function formatStats(
   option: OptionDefinition
 ): FormattedResponse {
   const widgets: FormattedResponse["widgets"] = [];
+  const isViewStats = option.id === "view.stats";
 
   for (const result of sqlResults) {
     if (result.rows.length === 0) continue;
+
+    // Skip profile_public_stats for public.stats (citizen view)
+    if (result.templateName === "profile_public_stats" && !isViewStats) continue;
 
     const firstRow = result.rows[0];
     const numericKeys = Object.keys(firstRow).filter(
@@ -716,10 +774,15 @@ function formatStats(
       && numericKeys.length === Object.keys(firstRow).length;
 
     if (isSingleAggregate) {
-      const stats = numericKeys.map((key) => ({
-        label: humanLabel(key),
-        value: String(firstRow[key]),
-      }));
+      const stats = numericKeys.map((key) => {
+        let value: string;
+        if (result.templateName === "profile_public_stats" && key === "avatar_set") {
+          value = (Number(firstRow[key]) || 0) ? "Set" : "Not set";
+        } else {
+          value = String(firstRow[key]);
+        }
+        return { label: humanLabel(key), value };
+      });
       widgets.push({
         type: "stats_grid",
         data: { stats },
@@ -748,7 +811,7 @@ function formatStats(
     widgets.length > 0
       ? isPublicStats
         ? "Here's an overview of activity statistics."
-        : "Here's an overview of your activity statistics."
+        : "Here's an overview of your activity statistics, public site content, and profile."
       : isPublicStats
         ? "No statistics available yet."
         : "No statistics available yet. Start adding activities!";

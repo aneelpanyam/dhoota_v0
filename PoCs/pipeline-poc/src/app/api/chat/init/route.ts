@@ -20,28 +20,59 @@ export async function POST(request: Request) {
       const defaultOpts = optionsToReferences(context.defaultOptions);
 
       const db = createServiceSupabase();
-      let welcomeText = "Welcome! Ask me about activities, announcements, and more.";
-
       const tenantId = getPublicTenantId();
       const userId = getPublicUserId();
+      const welcomeWidgets: Widget[] = [];
+
       if (tenantId && userId) {
-        const { data: config } = await db
-          .from("public_site_configs")
-          .select("welcome_message, side_panel_content, theme_overrides")
+        const { data: welcomeRows } = await db
+          .from("public_site_welcome_messages")
+          .select("message_text, banner_url")
           .eq("tenant_id", tenantId)
           .eq("user_id", userId)
-          .single();
-        if (config?.welcome_message) {
-          welcomeText = config.welcome_message;
-        }
-      }
+          .order("display_order", { ascending: true })
+          .order("created_at", { ascending: true });
 
-      const welcomeWidget: Widget = {
-        id: generateId(),
-        type: "text_response",
-        data: { text: welcomeText },
-        bookmarkable: false,
-      };
+        if (welcomeRows && welcomeRows.length > 0) {
+          for (const row of welcomeRows) {
+            const text = (row.message_text as string) ?? "";
+            const bannerUrl = row.banner_url as string | null | undefined;
+            const bannerImageUrl =
+              bannerUrl && bannerUrl.trim()
+                ? bannerUrl.startsWith("http")
+                  ? bannerUrl
+                  : `/api/media/serve?key=${encodeURIComponent(bannerUrl)}`
+                : undefined;
+            welcomeWidgets.push({
+              id: generateId(),
+              type: "welcome_message",
+              data: { text, bannerImageUrl },
+              bookmarkable: false,
+            });
+          }
+        } else {
+          const { data: config } = await db
+            .from("public_site_configs")
+            .select("welcome_message")
+            .eq("tenant_id", tenantId)
+            .eq("user_id", userId)
+            .single();
+          const fallbackText = config?.welcome_message ?? "Welcome! Ask me about activities, announcements, and more.";
+          welcomeWidgets.push({
+            id: generateId(),
+            type: "text_response",
+            data: { text: fallbackText },
+            bookmarkable: false,
+          });
+        }
+      } else {
+        welcomeWidgets.push({
+          id: generateId(),
+          type: "text_response",
+          data: { text: "Welcome! Ask me about activities, announcements, and more." },
+          bookmarkable: false,
+        });
+      }
 
       const menuWidget: Widget = {
         id: generateId(),
@@ -53,7 +84,12 @@ export async function POST(request: Request) {
       const welcomeMsg: ChatMessageResponse = {
         messageId: generateId(),
         conversationId,
-        widgets: [welcomeWidget],
+        widgets: welcomeWidgets.length > 0 ? welcomeWidgets : [{
+          id: generateId(),
+          type: "text_response",
+          data: { text: "Welcome! Ask me about activities, announcements, and more." },
+          bookmarkable: false,
+        }],
         followUps: [],
         defaultOptions: defaultOpts,
         conversationState: "active",
@@ -183,34 +219,40 @@ export async function POST(request: Request) {
 
     const defaultOpts = optionsToReferences(context.defaultOptions);
 
-    // Load announcements and info cards for tenant user init
-    const [announcementsRes, infoCardsRes] = await Promise.all([
-      db
-        .from("announcements")
-        .select("id, title, content, pinned, published_at")
-        .eq("tenant_id", session.tenantId)
-        .eq("visibility", "public")
-        .is("deleted_at", null)
-        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-        .order("pinned", { ascending: false })
-        .order("published_at", { ascending: false, nullsFirst: false })
-        .limit(5),
-      db
-        .from("info_cards")
-        .select("id, title, content, card_type, icon, display_order")
-        .eq("tenant_id", session.tenantId)
-        .eq("visibility", "public")
-        .is("deleted_at", null)
-        .order("display_order", { ascending: true })
-        .limit(10),
-    ]);
+    // Load announcements and info cards only for citizen views (not worker/representative/candidate/admin)
+    const skipAnnouncementsAndInfoCards = ["worker", "representative", "candidate", "system_admin"].includes(session.userType ?? "");
 
-    const announcements = announcementsRes.data ?? [];
-    const infoCards = infoCardsRes.data ?? [];
+    let announcements: unknown[] = [];
+    let infoCards: unknown[] = [];
+
+    if (!skipAnnouncementsAndInfoCards) {
+      const [announcementsRes, infoCardsRes] = await Promise.all([
+        db
+          .from("announcements")
+          .select("id, title, content, pinned, published_at")
+          .eq("tenant_id", session.tenantId)
+          .eq("visibility", "public")
+          .is("deleted_at", null)
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+          .order("pinned", { ascending: false })
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .limit(5),
+        db
+          .from("info_cards")
+          .select("id, title, content, card_type, icon, display_order")
+          .eq("tenant_id", session.tenantId)
+          .eq("visibility", "public")
+          .is("deleted_at", null)
+          .order("display_order", { ascending: true })
+          .limit(10),
+      ]);
+      announcements = announcementsRes.data ?? [];
+      infoCards = infoCardsRes.data ?? [];
+    }
 
     const initWidgets: Widget[] = [];
 
-    if (announcements.length > 0) {
+    if (!skipAnnouncementsAndInfoCards && announcements.length > 0) {
       initWidgets.push({
         id: generateId(),
         type: "text_response",
@@ -225,7 +267,7 @@ export async function POST(request: Request) {
       });
     }
 
-    if (infoCards.length > 0) {
+    if (!skipAnnouncementsAndInfoCards && infoCards.length > 0) {
       for (const card of infoCards) {
         const content = card.content as Record<string, unknown>;
         const text = typeof content?.content_raw === "string" ? content.content_raw : (content?.text as string) ?? "";

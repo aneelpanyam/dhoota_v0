@@ -36,6 +36,8 @@ export function QuestionStepperWidget({
   const questions = (d.questions ?? []) as QuestionData[];
   const sessionParams = (d.sessionParams as Record<string, unknown>) ?? {};
   const entityContext = d.entityContext;
+  const currentAvatarUrl = d.currentAvatarUrl as string | undefined;
+  const currentBannerUrl = d.currentBannerUrl as string | undefined;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [collectedParams, setCollectedParams] = useState<Record<string, unknown>>({});
@@ -60,6 +62,8 @@ export function QuestionStepperWidget({
       optionId,
       sessionParams: effectiveSessionParams,
       entityContext,
+      currentAvatarUrl: currentQuestion.questionKey === "avatar_keys" ? currentAvatarUrl : undefined,
+      currentBannerUrl: currentQuestion.questionKey === "banner_keys" ? currentBannerUrl : undefined,
     },
     bookmarkable: false,
   };

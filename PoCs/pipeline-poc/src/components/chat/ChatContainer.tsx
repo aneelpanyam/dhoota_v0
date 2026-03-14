@@ -27,6 +27,7 @@ export function ChatContainer() {
       enabledOptionIds: string[];
       siteTitle?: string | null;
       infoCards?: { id: string; title: string; content: unknown; card_type: string; icon?: string; display_order: number }[];
+      representativeAvatarUrl?: string | null;
     };
     conversationContext: string;
     user: { userType: string; displayName: string } | null;
@@ -192,6 +193,7 @@ export function ChatContainer() {
           optionLoadingMessages={optionLoadingMessages}
           conversationId={chat.conversationId}
           bookmarksEnabled={bookmarksEnabled}
+          representativeAvatarUrl={isPublic ? sessionContext?.publicSiteConfig?.representativeAvatarUrl ?? undefined : undefined}
           onAction={(action) => {
             recordActivity();
             if (action.optionId === "_load_conversation" && action.params?.conversationId) {

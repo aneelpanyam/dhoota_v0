@@ -21,6 +21,7 @@ import { CalendarWidget } from "./CalendarWidget";
 import { TimelineWidget } from "./TimelineWidget";
 import { InfoCardWidget } from "./InfoCardWidget";
 import { AnnouncementCardWidget } from "./AnnouncementCardWidget";
+import { WelcomeMessageWidget } from "./WelcomeMessageWidget";
 
 export interface WidgetRendererProps {
   widget: Widget;
@@ -62,6 +63,7 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   status_ticket: TextResponseWidget,
   info_card: InfoCardWidget,
   announcement_card: AnnouncementCardWidget,
+  welcome_message: WelcomeMessageWidget,
 };
 
 export function WidgetRenderer(props: WidgetRendererProps) {

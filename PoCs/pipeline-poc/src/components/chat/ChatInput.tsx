@@ -54,15 +54,9 @@ export function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Default to collapsed on mobile to save space
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 768px)");
-    setIsExpanded(!mq.matches);
-  }, []);
 
   const hasContext = contextItems.length > 0;
   const hasFilter = !!selectedFilter;
@@ -302,10 +296,10 @@ export function ChatInput({
           <button
             onClick={() => setIsExpanded(true)}
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg px-3 py-2 transition"
-            title="Ask a question"
+            title="Gather insights"
           >
             <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">Ask a question</span>
+            <span className="text-sm font-medium">Explore</span>
           </button>
           {contextFilters && contextFilters.length > 0 && (
             <span className="text-xs text-muted-foreground" title={`${contextFilters.length} filter${contextFilters.length !== 1 ? "s" : ""} available`}>

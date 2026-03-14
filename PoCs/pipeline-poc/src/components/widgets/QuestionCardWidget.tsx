@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
 import { Send, X, Upload, FileIcon, FileText, Plus, Trash2 } from "lucide-react";
+import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
 
 interface PendingFile {
   file: File;
@@ -46,6 +47,8 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const optionId = d.optionId as string;
   const sessionParams = (d.sessionParams as Record<string, unknown>) ?? {};
   const entityContext = d.entityContext as EntityContextData | null | undefined;
+  const currentAvatarUrl = d.currentAvatarUrl as string | undefined;
+  const currentBannerUrl = d.currentBannerUrl as string | undefined;
 
   const dynamicSource = widgetConfig.source as string | undefined;
   const [dynamicOptions, setDynamicOptions] = useState<DynamicOption[]>([]);
@@ -63,6 +66,10 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     const params = new URLSearchParams({ source });
     if (source === "tenant_users" && sessionParams?.tenant_id) {
       params.set("tenantId", String(sessionParams.tenant_id));
+    }
+    if (source === "welcome_messages") {
+      if (sessionParams?.tenant_id) params.set("tenantId", String(sessionParams.tenant_id));
+      if (sessionParams?.user_id) params.set("userId", String(sessionParams.user_id));
     }
     fetch(`/api/options/dynamic-source?${params.toString()}`)
       .then((r) => r.json())
@@ -140,6 +147,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       setPendingFiles((prev) => [...prev, pending]);
 
       try {
+        const uploadContext = (widgetConfig.uploadContext as string) || "activity";
         const res = await fetch("/api/media/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -147,7 +155,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
             filename: file.name,
             mimeType: file.type,
             fileSizeBytes: file.size,
-            context: "activity",
+            context: uploadContext,
           }),
         });
 
@@ -178,7 +186,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     }
 
     e.target.value = "";
-  }, []);
+  }, [widgetConfig]);
 
   const removeFile = (index: number) => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== index));
@@ -464,14 +472,12 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         </div>
       ) : effectiveInlineWidget === "markdown_editor" ? (
         <div className="space-y-2">
-          <textarea
+          <RichMarkdownEditor
             value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={(widgetConfig.placeholder as string) ?? "Enter content (markdown supported)..."}
-            rows={Math.max(6, (widgetConfig.minRows as number) ?? 6)}
-            className="w-full px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono min-h-[120px] resize-y"
+            onChange={setValue}
+            placeholder={(widgetConfig.placeholder as string) ?? "Enter content (use toolbar for formatting)..."}
+            minRows={Math.max(6, (widgetConfig.minRows as number) ?? 6)}
           />
-          <p className="text-[11px] text-muted-foreground">Supports markdown: **bold**, *italic*, headers, lists, links</p>
           <div className="flex justify-end">
             <button
               onClick={handleSubmit}
@@ -525,6 +531,26 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         </div>
       ) : effectiveInlineWidget === "file_upload" ? (
         <div className="space-y-2">
+          {currentAvatarUrl && questionKey === "avatar_keys" && (
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Current profile picture</p>
+              <img
+                src={currentAvatarUrl}
+                alt="Current avatar"
+                className="w-20 h-20 rounded-full object-cover border-2 border-muted"
+              />
+            </div>
+          )}
+          {currentBannerUrl && questionKey === "banner_keys" && (
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Current banner image</p>
+              <img
+                src={currentBannerUrl}
+                alt="Current banner"
+                className="w-full max-h-32 object-cover rounded-lg border-2 border-muted"
+              />
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"

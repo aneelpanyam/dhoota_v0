@@ -14,8 +14,9 @@ export interface ValidationResult {
 
 /**
  * Normalize params before validation.
- * Coerces string "true"/"false" to boolean for schema properties that expect boolean.
- * Select questions often return strings; this fixes validation failures.
+ * - Coerces string "true"/"false" to boolean for schema properties that expect boolean.
+ * - Removes null/undefined for optional params so validation passes (e.g. optional
+ *   banner_keys when user skips; schema type "array" rejects null).
  */
 export function normalizeParams(
   params: Record<string, unknown>,
@@ -24,6 +25,7 @@ export function normalizeParams(
   if (!schema || typeof schema !== "object") return params;
   const props = schema.properties as Record<string, { type?: string }> | undefined;
   if (!props || typeof props !== "object") return params;
+  const required = (schema.required as string[] | undefined) ?? [];
 
   const normalized = { ...params };
   for (const [key, prop] of Object.entries(props)) {
@@ -31,6 +33,11 @@ export function normalizeParams(
       const val = normalized[key];
       if (val === "true") normalized[key] = true;
       else if (val === "false") normalized[key] = false;
+    }
+    // Strip null/undefined for optional params so schema validation passes
+    // (e.g. optional banner_keys when user skips; schema type "array" rejects null)
+    if (!required.includes(key) && normalized[key] == null) {
+      delete normalized[key];
     }
   }
   return normalized;

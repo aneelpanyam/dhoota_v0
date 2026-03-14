@@ -11,6 +11,8 @@ const SOURCE_QUERIES: Record<
     labelField: string;
     tenantScoped?: boolean;
     tenantParam?: string;
+    userScoped?: boolean;
+    userParam?: string;
     filters?: Record<string, unknown>;
   }
 > = {
@@ -73,6 +75,16 @@ const SOURCE_QUERIES: Record<
     tenantScoped: true,
     filters: { is_hidden: false },
   },
+  welcome_messages: {
+    table: "public_site_welcome_messages",
+    select: "id, message_text",
+    valueField: "id",
+    labelField: "message_text",
+    tenantScoped: true,
+    tenantParam: "tenantId",
+    userScoped: true,
+    userParam: "userId",
+  },
 };
 
 export async function GET(request: NextRequest) {
@@ -97,6 +109,10 @@ export async function GET(request: NextRequest) {
       ? request.nextUrl.searchParams.get(config.tenantParam)
       : null;
     const effectiveTenantId = tenantIdParam ?? session?.tenantId ?? null;
+    const userIdParam = config.userParam
+      ? request.nextUrl.searchParams.get(config.userParam)
+      : null;
+    const effectiveUserId = userIdParam ?? session?.id ?? null;
 
     let query = db.from(config.table).select(config.select);
 
@@ -104,6 +120,9 @@ export async function GET(request: NextRequest) {
       query = query.or(`tenant_id.eq.${effectiveTenantId},tenant_id.is.null`);
     } else if (config.tenantScoped && effectiveTenantId) {
       query = query.eq("tenant_id", effectiveTenantId);
+    }
+    if (config.userScoped && effectiveUserId) {
+      query = query.eq("user_id", effectiveUserId);
     }
     if (config.filters) {
       for (const [key, val] of Object.entries(config.filters)) {

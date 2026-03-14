@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
           .single();
 
         if (activity) {
-          // Proxy stream instead of redirect to avoid img loading issues (CORS, redirects)
           const stream = await getObjectStream(key);
           if (stream) {
             const headers: Record<string, string> = {
@@ -41,10 +40,67 @@ export async function GET(request: NextRequest) {
             }
             return new NextResponse(stream.body, { status: 200, headers });
           }
-          // Fallback to redirect if stream fails
           const url = await generatePresignedReadUrl(key);
           return NextResponse.redirect(url, 302);
         }
+      }
+
+      // Avatar: allow serving if key matches users.avatar_url for a representative with public site
+      const { data: avatarUser } = await db
+        .from("users")
+        .select("id")
+        .eq("avatar_url", key)
+        .not("avatar_url", "is", null)
+        .single();
+
+      if (avatarUser) {
+        const { data: hasPublicSite } = await db
+          .from("public_site_configs")
+          .select("user_id")
+          .eq("user_id", avatarUser.id)
+          .limit(1)
+          .single();
+
+        if (hasPublicSite) {
+          const stream = await getObjectStream(key);
+          if (stream) {
+            const headers: Record<string, string> = {
+              "Content-Type": (stream.contentType as string) ?? "image/jpeg",
+              "Cache-Control": "public, max-age=3600",
+            };
+            if (stream.contentLength != null) {
+              headers["Content-Length"] = String(stream.contentLength);
+            }
+            return new NextResponse(stream.body, { status: 200, headers });
+          }
+          const url = await generatePresignedReadUrl(key);
+          return NextResponse.redirect(url, 302);
+        }
+      }
+
+      // Banner: allow serving if key matches public_site_welcome_messages.banner_url
+      const { data: bannerRow } = await db
+        .from("public_site_welcome_messages")
+        .select("id")
+        .eq("banner_url", key)
+        .not("banner_url", "is", null)
+        .limit(1)
+        .single();
+
+      if (bannerRow) {
+        const stream = await getObjectStream(key);
+        if (stream) {
+          const headers: Record<string, string> = {
+            "Content-Type": (stream.contentType as string) ?? "image/jpeg",
+            "Cache-Control": "public, max-age=3600",
+          };
+          if (stream.contentLength != null) {
+            headers["Content-Length"] = String(stream.contentLength);
+          }
+          return new NextResponse(stream.body, { status: 200, headers });
+        }
+        const url = await generatePresignedReadUrl(key);
+        return NextResponse.redirect(url, 302);
       }
     }
 

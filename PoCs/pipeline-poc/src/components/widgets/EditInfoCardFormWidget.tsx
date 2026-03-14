@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, X } from "lucide-react";
+import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
 
 interface InfoCardData {
   id: string;
@@ -64,14 +65,12 @@ export function EditInfoCardFormWidget({ infoCard, onSave, onCancel }: Props) {
 
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Content</label>
-          <textarea
+          <RichMarkdownEditor
             value={contentRaw}
-            onChange={(e) => setContentRaw(e.target.value)}
-            rows={6}
-            placeholder="Enter content (markdown supported)..."
-            className="w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none resize-y font-mono min-h-[120px]"
+            onChange={setContentRaw}
+            placeholder="Enter content (use toolbar for formatting)..."
+            minRows={6}
           />
-          <p className="text-[11px] text-muted-foreground mt-1">Supports markdown: **bold**, *italic*, headers, lists, links</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

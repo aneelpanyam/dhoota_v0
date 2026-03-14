@@ -112,11 +112,21 @@ export async function processMessage(
         baseParams,
         context
       );
-      const entityCtx = await fetchEntityContext(sessionParams, context.tenantId);
+      const { params: avatarParams, currentAvatarUrl } = await enrichSessionParamsWithAvatar(
+        resolved.option!.id,
+        sessionParams,
+        context
+      );
+      const { params: welcomeParams, currentBannerUrl } = await enrichSessionParamsWithWelcomeMessage(
+        resolved.option!.id,
+        avatarParams,
+        context
+      );
+      const entityCtx = await fetchEntityContext(welcomeParams, context.tenantId);
       const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
         qaResult.nextQuestions,
         resolved.option!.id,
-        sessionParams,
+        welcomeParams,
         context.tenantId
       );
 
@@ -135,8 +145,10 @@ export async function processMessage(
         data: {
           optionId: resolved.option!.id,
           questions: enrichedQuestions,
-          sessionParams,
+          sessionParams: welcomeParams,
           entityContext: entityCtx,
+          currentAvatarUrl: currentAvatarUrl ?? undefined,
+          currentBannerUrl: currentBannerUrl ?? undefined,
         },
         bookmarkable: false,
       });
@@ -364,11 +376,21 @@ async function handleQAResponse(
       baseParams,
       context
     );
-    const entityCtx = await fetchEntityContext(sessionParams, context.tenantId);
+    const { params: avatarParams, currentAvatarUrl } = await enrichSessionParamsWithAvatar(
+      option.id,
+      sessionParams,
+      context
+    );
+    const { params: welcomeParams, currentBannerUrl } = await enrichSessionParamsWithWelcomeMessage(
+      option.id,
+      avatarParams,
+      context
+    );
+    const entityCtx = await fetchEntityContext(welcomeParams, context.tenantId);
     const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
       qaResult.nextQuestions,
       option.id,
-      sessionParams,
+      welcomeParams,
       context.tenantId
     );
 
@@ -378,8 +400,10 @@ async function handleQAResponse(
       data: {
         optionId: option.id,
         questions: enrichedQuestions,
-        sessionParams,
+        sessionParams: welcomeParams,
         entityContext: entityCtx,
+        currentAvatarUrl: currentAvatarUrl ?? undefined,
+        currentBannerUrl: currentBannerUrl ?? undefined,
       },
       bookmarkable: false,
     }];
@@ -737,12 +761,38 @@ function ensureInfoCardContentParams(params: Record<string, unknown>, optionId: 
   return out;
 }
 
+function ensureAvatarUrlFromKeys(params: Record<string, unknown>, optionId: string): Record<string, unknown> {
+  if (optionId !== "profile.edit" && optionId !== "admin.user.edit" && optionId !== "profile.set_avatar") return params;
+  const keys = params.avatar_keys;
+  if (!Array.isArray(keys) || keys.length === 0) return params;
+  const first = keys[0] as { s3Key?: string } | undefined;
+  const s3Key = first?.s3Key;
+  if (typeof s3Key !== "string") return params;
+  const out = { ...params };
+  out.avatar_url = s3Key;
+  return out;
+}
+
+function ensureBannerUrlFromKeys(params: Record<string, unknown>, optionId: string): Record<string, unknown> {
+  if (optionId !== "public_site.welcome_message.add" && optionId !== "public_site.welcome_message.edit") return params;
+  const keys = params.banner_keys;
+  if (!Array.isArray(keys) || keys.length === 0) return params;
+  const first = keys[0] as { s3Key?: string } | undefined;
+  const s3Key = first?.s3Key;
+  if (typeof s3Key !== "string") return params;
+  const out = { ...params };
+  out.banner_url = s3Key;
+  return out;
+}
+
 async function executeWithHandler(
   option: OptionDefinition,
   params: Record<string, unknown>,
   context: UserContext
 ): Promise<import("@/types/pipeline").SqlResult[]> {
-  const effectiveParams = ensureInfoCardContentParams(params, option.id);
+  let effectiveParams = ensureAvatarUrlFromKeys(params, option.id);
+  effectiveParams = ensureBannerUrlFromKeys(effectiveParams, option.id);
+  effectiveParams = ensureInfoCardContentParams(effectiveParams, option.id);
   const handlerId = option.handler_id ?? "sql";
   const handler = getHandler(handlerId);
   if (!handler) {
@@ -813,7 +863,7 @@ async function saveActivityTags(
 }
 
 const HIDDEN_DISPLAY_KEYS = new Set([
-  "tenant_id", "user_id", "media_keys", "media_file_names",
+  "tenant_id", "user_id", "media_keys", "media_file_names", "avatar_keys", "banner_keys",
   "offset", "pageSize", "page",
 ]);
 
@@ -822,6 +872,7 @@ const CONFIRM_FIELD_ORDER: Record<string, string[]> = {
   "announcement.edit": ["title", "content", "visibility", "pinned"],
   "info_card.create": ["title", "content", "card_type", "visibility"],
   "info_card.edit": ["title", "content", "card_type", "visibility"],
+  "public_site.welcome_message.edit": ["message_text"],
 };
 
 function buildSimpleDisplayFields(
@@ -1038,6 +1089,73 @@ async function enrichTagQuestionsWithPrefetch(
   });
 }
 
+async function enrichSessionParamsWithAvatar(
+  optionId: string,
+  params: Record<string, unknown>,
+  context: { tenantId: string; userId: string }
+): Promise<{ params: Record<string, unknown>; currentAvatarUrl?: string | null }> {
+  if (optionId !== "profile.set_avatar") {
+    return { params };
+  }
+  const userId = (params.user_id as string) ?? context.userId;
+  if (!userId) return { params };
+  try {
+    const db = createServiceSupabase();
+    const { data } = await db
+      .from("users")
+      .select("avatar_url")
+      .eq("id", userId)
+      .single();
+    const avatarUrl = data?.avatar_url as string | null | undefined;
+    const currentAvatarUrl =
+      avatarUrl && avatarUrl.trim()
+        ? avatarUrl.startsWith("http")
+          ? avatarUrl
+          : `/api/media/serve?key=${encodeURIComponent(avatarUrl)}`
+        : null;
+    return { params, currentAvatarUrl };
+  } catch {
+    return { params };
+  }
+}
+
+async function enrichSessionParamsWithWelcomeMessage(
+  optionId: string,
+  params: Record<string, unknown>,
+  context: { tenantId: string; userId: string }
+): Promise<{ params: Record<string, unknown>; currentBannerUrl?: string | null }> {
+  if (optionId !== "public_site.welcome_message.edit") return { params };
+  const welcomeMessageId = params.welcome_message_id as string | undefined;
+  if (!welcomeMessageId) return { params };
+
+  try {
+    const db = createServiceSupabase();
+    const { data } = await db
+      .from("public_site_welcome_messages")
+      .select("message_text, banner_url")
+      .eq("id", welcomeMessageId)
+      .eq("tenant_id", context.tenantId)
+      .eq("user_id", context.userId)
+      .single();
+    if (!data) return { params };
+
+    const merged = { ...params };
+    if (merged.message_text == null && data.message_text != null) {
+      merged.message_text = data.message_text;
+    }
+    let currentBannerUrl: string | null = null;
+    const bannerUrl = data.banner_url as string | null | undefined;
+    if (bannerUrl && bannerUrl.trim()) {
+      currentBannerUrl = bannerUrl.startsWith("http")
+        ? bannerUrl
+        : `/api/media/serve?key=${encodeURIComponent(bannerUrl)}`;
+    }
+    return { params: merged, currentBannerUrl };
+  } catch {
+    return { params };
+  }
+}
+
 async function enrichSessionParamsWithPublicSiteConfig(
   optionId: string,
   params: Record<string, unknown>,
@@ -1130,6 +1248,22 @@ async function fetchEntityContext(
       if (data) return { entityType: "program", entityId: programId, title: data.title ?? "Program" };
     }
 
+    const welcomeMessageId = params.welcome_message_id as string | undefined;
+    const welcomeUserId = params.user_id as string | undefined;
+    if (welcomeMessageId && welcomeUserId) {
+      const { data } = await db
+        .from("public_site_welcome_messages")
+        .select("id, message_text")
+        .eq("id", welcomeMessageId)
+        .eq("tenant_id", tenantId)
+        .eq("user_id", welcomeUserId)
+        .single();
+      if (data) {
+        const preview = (data.message_text as string)?.slice(0, 50) ?? "Welcome message";
+        return { entityType: "welcome_message", entityId: welcomeMessageId, title: preview + (preview.length >= 50 ? "…" : "") };
+      }
+    }
+
     return null;
   } catch {
     return null;
@@ -1143,6 +1277,7 @@ const EDIT_ENTITY_MAP: Record<string, { table: string; idParam: string; fields: 
   "admin.report.process": { table: "report_requests", idParam: "report_id", fields: "id, status, result_url, report_type" },
   "info_card.edit": { table: "info_cards", idParam: "info_card_id", fields: "id, title, content, card_type, visibility" },
   "announcement.edit": { table: "announcements", idParam: "announcement_id", fields: "id, title, content, visibility, pinned" },
+  "public_site.welcome_message.edit": { table: "public_site_welcome_messages", idParam: "welcome_message_id", fields: "id, message_text, banner_url" },
 };
 
 async function prefetchEntityForEdit(

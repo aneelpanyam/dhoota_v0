@@ -16,6 +16,7 @@
     "@aws-sdk/s3-request-presigner": "^3.700.0",
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.49.0",
+    "@uiw/react-md-editor": "^4.0.11",
     "ajv": "^8.18.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

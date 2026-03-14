@@ -113,4 +113,5 @@ export type WidgetType =
   | "context_picker"
   | "report_view"
   | "info_card"
-  | "announcement_card";
+  | "announcement_card"
+  | "welcome_message";

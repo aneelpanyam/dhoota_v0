@@ -30,7 +30,7 @@ export async function GET() {
       const userId = getPublicUserId();
       if (tenantId && userId) {
         const db = createServiceSupabase();
-        const [configResult, cardsResult] = await Promise.all([
+        const [configResult, cardsResult, userResult] = await Promise.all([
           db
             .from("public_site_configs")
             .select("welcome_message, side_panel_content, theme_overrides, enabled_option_ids, site_title")
@@ -45,12 +45,26 @@ export async function GET() {
             .eq("visibility", "public")
             .is("deleted_at", null)
             .order("display_order", { ascending: true }),
+          db
+            .from("users")
+            .select("avatar_url")
+            .eq("id", userId)
+            .eq("tenant_id", tenantId)
+            .is("deleted_at", null)
+            .single(),
         ]);
 
         const data = configResult.data;
         const infoCards = cardsResult.data ?? [];
+        const avatarUrl = userResult.data?.avatar_url as string | null | undefined;
 
         if (data) {
+          let representativeAvatarUrl: string | null = null;
+          if (avatarUrl && avatarUrl.trim()) {
+            representativeAvatarUrl = avatarUrl.startsWith("http")
+              ? avatarUrl
+              : `/api/media/serve?key=${encodeURIComponent(avatarUrl)}`;
+          }
           publicSiteConfig = {
             welcomeMessage: data.welcome_message,
             sidePanelContent: data.side_panel_content,
@@ -58,6 +72,7 @@ export async function GET() {
             enabledOptionIds: data.enabled_option_ids,
             siteTitle: data.site_title ?? null,
             infoCards,
+            representativeAvatarUrl,
           };
         }
       }

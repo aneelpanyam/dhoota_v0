@@ -14,6 +14,7 @@ export async function refineInput(
   const schema = option.input_schema ?? {};
 
   const originalMediaKeys = rawParams.media_keys;
+  const originalAvatarKeys = rawParams.avatar_keys;
   const sanitized = sanitizeParams(rawParams);
   const guardrailed = applyGuardrailsToParams(sanitized);
 
@@ -25,6 +26,13 @@ export async function refineInput(
 
   if (originalMediaKeys && Array.isArray(originalMediaKeys) && originalMediaKeys.length > 0) {
     refined.params.media_keys = originalMediaKeys;
+  }
+  if (originalAvatarKeys && Array.isArray(originalAvatarKeys) && originalAvatarKeys.length > 0) {
+    refined.params.avatar_keys = originalAvatarKeys;
+  }
+  const originalBannerKeys = rawParams.banner_keys;
+  if (originalBannerKeys && Array.isArray(originalBannerKeys) && originalBannerKeys.length > 0) {
+    refined.params.banner_keys = originalBannerKeys;
   }
 
   // Preserve user-provided tags in params alongside LLM suggestions
@@ -79,6 +87,12 @@ function sanitizeParams(params: Record<string, unknown>): Record<string, unknown
       .map((f) => (f as { originalFilename?: string }).originalFilename ?? "file")
       .join(", ");
     delete cleaned.media_keys;
+  }
+  if (Array.isArray(cleaned.avatar_keys)) {
+    delete cleaned.avatar_keys;
+  }
+  if (Array.isArray(cleaned.banner_keys)) {
+    delete cleaned.banner_keys;
   }
 
   // Remove table/list outputs before LLM - they are preserved and restored after

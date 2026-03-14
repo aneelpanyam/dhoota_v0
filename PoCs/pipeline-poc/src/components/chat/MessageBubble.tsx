@@ -2,16 +2,36 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
-import type { WidgetAction, ChatMessageResponse, OptionReference } from "@/types/api";
+import type { WidgetAction, ChatMessageResponse, OptionReference, Widget } from "@/types/api";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, Bookmark, Sparkles } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
+
+function splitIntoWidgetGroups(widgets: Widget[]): { type: "welcome_messages" | "single"; widgets: Widget[] }[] {
+  const groups: { type: "welcome_messages" | "single"; widgets: Widget[] }[] = [];
+  let i = 0;
+  while (i < widgets.length) {
+    if (widgets[i].type === "welcome_message") {
+      const batch: Widget[] = [];
+      while (i < widgets.length && widgets[i].type === "welcome_message") {
+        batch.push(widgets[i]);
+        i++;
+      }
+      groups.push({ type: "welcome_messages", widgets: batch });
+    } else {
+      groups.push({ type: "single", widgets: [widgets[i]] });
+      i++;
+    }
+  }
+  return groups;
+}
 
 interface MessageBubbleProps {
   message: ChatMessage;
   isLastMessage?: boolean;
   isHidden?: boolean;
   isBookmarked?: boolean;
+  representativeAvatarUrl?: string | null;
   onAction: (action: WidgetAction) => void;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onConfirm: (optionId: string, params: Record<string, unknown>) => void;
@@ -32,6 +52,7 @@ export function MessageBubble({
   isLastMessage,
   isHidden,
   isBookmarked,
+  representativeAvatarUrl,
   onAction,
   onOptionSelect,
   onConfirm,
@@ -114,11 +135,22 @@ export function MessageBubble({
   const collapsed = message.collapsedMessages;
   const hasCollapsed = collapsed && collapsed.length > 0;
 
-  return (
-    <div className="group/msg flex items-start gap-3">
+  const avatarEl =
+    representativeAvatarUrl ? (
+      <img
+        src={representativeAvatarUrl}
+        alt=""
+        className="w-8 h-8 rounded-full object-cover shrink-0 bg-secondary"
+      />
+    ) : (
       <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
         <Bot className="h-4 w-4 text-secondary-foreground" />
       </div>
+    );
+
+  return (
+    <div className="group/msg flex items-start gap-3">
+      {avatarEl}
       <div className="flex-1 min-w-0 space-y-3">
         {/* Collapsed conversation toggle */}
         {hasCollapsed && (
@@ -142,18 +174,45 @@ export function MessageBubble({
         )}
 
         {/* Main widgets */}
-        {response.widgets.map((widget) => (
-          <WidgetRenderer
-            key={widget.id}
-            widget={widget}
-            onAction={onAction}
-            onOptionSelect={onOptionSelect}
-            onConfirm={onConfirm}
-            onQAResponse={onQAResponse}
-            onCancel={onCancel}
-            onPinToContext={onPinToContext}
-          />
-        ))}
+        {(() => {
+          const widgets = response.widgets;
+          const groups = splitIntoWidgetGroups(widgets);
+          const injectAvatar = (w: Widget) =>
+            w.type === "welcome_message"
+              ? { ...w, data: { ...w.data, representativeAvatarUrl: representativeAvatarUrl ?? undefined } }
+              : w;
+          return groups.map((group, i) =>
+            group.type === "welcome_messages" && group.widgets.length > 1 ? (
+              <div key={`welcome-group-${i}`} className="">
+                {group.widgets.map((widget) => (
+                  <WidgetRenderer
+                    key={widget.id}
+                    widget={injectAvatar(widget)}
+                    onAction={onAction}
+                    onOptionSelect={onOptionSelect}
+                    onConfirm={onConfirm}
+                    onQAResponse={onQAResponse}
+                    onCancel={onCancel}
+                    onPinToContext={onPinToContext}
+                  />
+                ))}
+              </div>
+            ) : (
+              group.widgets.map((widget) => (
+                <WidgetRenderer
+                  key={widget.id}
+                  widget={injectAvatar(widget)}
+                  onAction={onAction}
+                  onOptionSelect={onOptionSelect}
+                  onConfirm={onConfirm}
+                  onQAResponse={onQAResponse}
+                  onCancel={onCancel}
+                  onPinToContext={onPinToContext}
+                />
+              ))
+            )
+          );
+        })()}
 
         <NextActionsSection
           response={response}

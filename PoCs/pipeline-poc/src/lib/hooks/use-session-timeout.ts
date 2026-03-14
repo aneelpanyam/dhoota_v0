@@ -54,6 +54,7 @@ export function useSessionTimeout({ onTimeout, enabled = true }: UseSessionTimeo
 
   useEffect(() => {
     if (!enabled) return;
+    setLastActivity(); // Reset on enable — treat fresh session as new activity
     const timeoutMs = getTimeoutMs();
     let intervalId: ReturnType<typeof setInterval>;
 

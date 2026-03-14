@@ -8,7 +8,7 @@ const presignSchema = z.object({
   filename: z.string().min(1),
   mimeType: z.string().min(1),
   fileSizeBytes: z.number().positive().max(50 * 1024 * 1024),
-  context: z.enum(["activity", "note", "profile"]),
+  context: z.enum(["activity", "note", "profile", "public_site"]),
 });
 
 export async function POST(request: Request) {
