@@ -111,4 +111,6 @@ export type WidgetType =
   | "default_options_menu"
   | "error_card"
   | "context_picker"
-  | "report_view";
+  | "report_view"
+  | "info_card"
+  | "announcement_card";

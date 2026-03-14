@@ -17,7 +17,7 @@ import { PipelineTrace } from "./trace";
 import { logger } from "@/lib/logging/logger";
 import { handleInsightsQuery, handleReportQuery } from "./insights";
 import { setLlmLogContext, clearLlmLogContext } from "@/lib/llm/cost";
-import { validateParams } from "./validator";
+import { validateParams, normalizeParams } from "./validator";
 
 export async function processMessage(
   request: SendMessageRequest,
@@ -102,11 +102,21 @@ export async function processMessage(
     );
 
     if (qaResult.status === "need_more" && qaResult.nextQuestions) {
-      const entityCtx = await fetchEntityContext(resolved.extractedParams ?? {}, context.tenantId);
+      const baseParams = {
+        ...(resolved.extractedParams ?? {}),
+        tenant_id: (resolved.extractedParams?.tenant_id as string) ?? context.tenantId,
+        user_id: (resolved.extractedParams?.user_id as string) ?? context.userId,
+      };
+      const sessionParams = await enrichSessionParamsWithPublicSiteConfig(
+        resolved.option!.id,
+        baseParams,
+        context
+      );
+      const entityCtx = await fetchEntityContext(sessionParams, context.tenantId);
       const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
         qaResult.nextQuestions,
         resolved.option!.id,
-        resolved.extractedParams ?? {},
+        sessionParams,
         context.tenantId
       );
 
@@ -125,7 +135,7 @@ export async function processMessage(
         data: {
           optionId: resolved.option!.id,
           questions: enrichedQuestions,
-          sessionParams: resolved.extractedParams ?? {},
+          sessionParams,
           entityContext: entityCtx,
         },
         bookmarkable: false,
@@ -251,7 +261,7 @@ export async function processMessage(
     );
 
     const processedWidgets = filterEmptyWidgets(
-      attachItemActions(formatted.widgets, resolved.option, context)
+      applyPinnableFlags(attachItemActions(formatted.widgets, resolved.option, context), resolved.option)
     );
 
     const widgets: Widget[] = processedWidgets.map((w) => ({
@@ -344,11 +354,21 @@ async function handleQAResponse(
 
   if (qaResult.status === "need_more" && qaResult.nextQuestions) {
     const collectedSoFar = qaResult.collectedParams ?? previousParams;
-    const entityCtx = await fetchEntityContext(collectedSoFar, context.tenantId);
+    const baseParams = {
+      ...collectedSoFar,
+      tenant_id: (collectedSoFar.tenant_id as string) ?? context.tenantId,
+      user_id: (collectedSoFar.user_id as string) ?? context.userId,
+    };
+    const sessionParams = await enrichSessionParamsWithPublicSiteConfig(
+      option.id,
+      baseParams,
+      context
+    );
+    const entityCtx = await fetchEntityContext(sessionParams, context.tenantId);
     const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
       qaResult.nextQuestions,
       option.id,
-      collectedSoFar,
+      sessionParams,
       context.tenantId
     );
 
@@ -358,7 +378,7 @@ async function handleQAResponse(
       data: {
         optionId: option.id,
         questions: enrichedQuestions,
-        sessionParams: collectedSoFar,
+        sessionParams,
         entityContext: entityCtx,
       },
       bookmarkable: false,
@@ -375,7 +395,7 @@ async function handleQAResponse(
   }
 
   const hasWrites = option.has_writes ?? (await loadSqlTemplates(option.id)).some((t) => t.query_type === "write");
-  const collectedParams = qaResult.collectedParams ?? {};
+  const collectedParams = normalizeParams(qaResult.collectedParams ?? {}, option.input_schema);
 
   const validation = validateParams(collectedParams, option.input_schema);
   if (!validation.valid) {
@@ -402,7 +422,7 @@ async function handleQAResponse(
     );
 
     const processedWidgets = filterEmptyWidgets(
-      attachItemActions(formatted.widgets, option, context)
+      applyPinnableFlags(attachItemActions(formatted.widgets, option, context), option)
     );
 
     const widgets: Widget[] = processedWidgets.map((w) => ({
@@ -708,17 +728,27 @@ function extractResourceIdFromParams(
   return undefined;
 }
 
+function ensureInfoCardContentParams(params: Record<string, unknown>, optionId: string): Record<string, unknown> {
+  if (optionId !== "info_card.create" && optionId !== "info_card.edit") return params;
+  const raw = params.content_raw;
+  if (raw == null || typeof raw !== "string") return params;
+  const out = { ...params };
+  out.content = { content_raw: raw };
+  return out;
+}
+
 async function executeWithHandler(
   option: OptionDefinition,
   params: Record<string, unknown>,
   context: UserContext
 ): Promise<import("@/types/pipeline").SqlResult[]> {
+  const effectiveParams = ensureInfoCardContentParams(params, option.id);
   const handlerId = option.handler_id ?? "sql";
   const handler = getHandler(handlerId);
   if (!handler) {
     throw new Error(`Unknown pipeline handler: ${handlerId}`);
   }
-  return handler.execute(option.id, params, {
+  return handler.execute(option.id, effectiveParams, {
     tenantId: context.tenantId,
     userId: context.userId,
     scopedUserId: context.scopedUserId,
@@ -787,12 +817,23 @@ const HIDDEN_DISPLAY_KEYS = new Set([
   "offset", "pageSize", "page",
 ]);
 
+const CONFIRM_FIELD_ORDER: Record<string, string[]> = {
+  "announcement.create": ["title", "content", "visibility", "pinned"],
+  "announcement.edit": ["title", "content", "visibility", "pinned"],
+  "info_card.create": ["title", "content", "card_type", "visibility"],
+  "info_card.edit": ["title", "content", "card_type", "visibility"],
+};
+
 function buildSimpleDisplayFields(
   params: Record<string, unknown>,
-  _optionId: string
+  optionId: string
 ): { label: string; value: string }[] {
+  const order = CONFIRM_FIELD_ORDER[optionId];
+  const entries = order
+    ? [...order.map((k) => [k, params[k]] as const).filter(([, v]) => v != null), ...Object.entries(params).filter(([k]) => !order.includes(k))]
+    : Object.entries(params);
   const fields: { label: string; value: string }[] = [];
-  for (const [key, val] of Object.entries(params)) {
+  for (const [key, val] of entries) {
     if (HIDDEN_DISPLAY_KEYS.has(key) || val == null) continue;
     if (Array.isArray(val)) {
       if (val.length === 0) continue;
@@ -822,6 +863,28 @@ function ensureConfirmFields(
 ): { label: string; value: string; inferred?: boolean }[] {
   if (fields.length > 0) return fields;
   return buildSimpleDisplayFields(params, optionId).map((f) => ({ ...f, inferred: false }));
+}
+
+function applyPinnableFlags(
+  widgets: { type: string; data: Record<string, unknown>; actions?: import("@/types/api").WidgetAction[] }[],
+  option: import("@/types/options").OptionDefinition | null
+): typeof widgets {
+  if (!option) return widgets;
+  const pinnableItems = option.pinnable_items === true;
+  const pinnableCollection = option.pinnable_collection === true;
+
+  return widgets.map((w) => {
+    if (w.type === "data_list") {
+      const data = { ...w.data };
+      if (!pinnableItems) data._noPinItems = true;
+      if (!pinnableCollection) data._noPinCollection = true;
+      return { ...w, data };
+    }
+    if (w.type === "activity_card" && !pinnableItems) {
+      return { ...w, data: { ...w.data, _noPin: true } };
+    }
+    return w;
+  });
 }
 
 function attachItemActions(
@@ -854,18 +917,22 @@ function attachItemActions(
 
   if (itemActions.length === 0) return widgets;
 
+  const attachCardActions = (w: { type: string; data: Record<string, unknown>; actions?: import("@/types/api").WidgetAction[] }) => {
+    const resourceId = w.data.id as string | undefined;
+    const cardActions = resourceId
+      ? itemActions.map((a) => ({
+          ...a,
+          targetResourceId: resourceId,
+          params: { [paramKey]: resourceId },
+        }))
+      : itemActions;
+    return { ...w, actions: cardActions };
+  };
+
   return widgets.map((w) => {
     if (w.type === "data_list" && !w.data._noItemActions) return { ...w, actions: itemActions };
-    if (w.type === "activity_card") {
-      const resourceId = w.data.id as string | undefined;
-      const cardActions = resourceId
-        ? itemActions.map((a) => ({
-            ...a,
-            targetResourceId: resourceId,
-            params: { [paramKey]: resourceId },
-          }))
-        : itemActions;
-      return { ...w, actions: cardActions };
+    if (w.type === "activity_card" || w.type === "info_card" || w.type === "announcement_card") {
+      return attachCardActions(w);
     }
     return w;
   });
@@ -971,6 +1038,44 @@ async function enrichTagQuestionsWithPrefetch(
   });
 }
 
+async function enrichSessionParamsWithPublicSiteConfig(
+  optionId: string,
+  params: Record<string, unknown>,
+  context: { tenantId: string; userId: string }
+): Promise<Record<string, unknown>> {
+  if (!["public_site.configure", "admin.public_site.configure"].includes(optionId)) {
+    return params;
+  }
+  const tenantId = (params.tenant_id as string) ?? context.tenantId;
+  const userId = (params.user_id as string) ?? context.userId;
+  if (!tenantId || !userId) return params;
+
+  try {
+    const db = createServiceSupabase();
+    const { data } = await db
+      .from("public_site_configs")
+      .select("welcome_message, site_title, enabled_option_ids")
+      .eq("tenant_id", tenantId)
+      .eq("user_id", userId)
+      .single();
+    if (!data) return params;
+
+    const merged = { ...params };
+    if (merged.welcome_message == null && data.welcome_message != null) {
+      merged.welcome_message = data.welcome_message;
+    }
+    if (merged.site_title == null && data.site_title != null) {
+      merged.site_title = data.site_title;
+    }
+    if (merged.enabled_option_ids == null && data.enabled_option_ids != null) {
+      merged.enabled_option_ids = data.enabled_option_ids;
+    }
+    return merged;
+  } catch {
+    return params;
+  }
+}
+
 async function fetchEntityContext(
   params: Record<string, unknown>,
   tenantId: string
@@ -1036,6 +1141,8 @@ const EDIT_ENTITY_MAP: Record<string, { table: string; idParam: string; fields: 
   "admin.user.edit": { table: "users", idParam: "user_id", fields: "id, display_name, email, user_type, access_code" },
   "admin.subscription.manage": { table: "tenants", idParam: "tenant_id", fields: "id, name, subscription" },
   "admin.report.process": { table: "report_requests", idParam: "report_id", fields: "id, status, result_url, report_type" },
+  "info_card.edit": { table: "info_cards", idParam: "info_card_id", fields: "id, title, content, card_type, visibility" },
+  "announcement.edit": { table: "announcements", idParam: "announcement_id", fields: "id, title, content, visibility, pinned" },
 };
 
 async function prefetchEntityForEdit(
@@ -1062,6 +1169,11 @@ async function prefetchEntityForEdit(
       if (merged[key] == null) {
         merged[key] = val ?? "";
       }
+    }
+    // info_card: extract content_raw from content jsonb for form/display
+    if (optionId === "info_card.edit" && merged.content != null) {
+      const content = merged.content as Record<string, unknown>;
+      merged.content_raw = typeof content?.content_raw === "string" ? content.content_raw : (content?.text as string) ?? "";
     }
     return merged;
   } catch {

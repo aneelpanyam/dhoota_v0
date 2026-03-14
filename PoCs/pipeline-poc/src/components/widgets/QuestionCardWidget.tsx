@@ -76,11 +76,20 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     return () => { cancelled = true; };
   }, [dynamicSource, inlineWidget, sessionParams?.tenant_id]);
 
-  const [value, setValue] = useState("");
-  const [dateValue, setDateValue] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const existingFromSession = sessionParams?.[questionKey];
+  const [value, setValue] = useState(() => {
+    if (existingFromSession != null && typeof existingFromSession === "string") return existingFromSession;
+    return "";
+  });
+  const [dateValue, setDateValue] = useState(() => {
+    if (existingFromSession != null && typeof existingFromSession === "string") {
+      const d = existingFromSession.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    }
+    return new Date().toISOString().split("T")[0];
+  });
   const [selectValue, setSelectValue] = useState(() => {
+    if (existingFromSession != null && existingFromSession !== "") return String(existingFromSession);
     const options = (((d.widgetConfig as Record<string, unknown>) ?? {}).options as string[]) ?? [];
     const defaultVal = ((d.widgetConfig as Record<string, unknown>) ?? {}).default as string | undefined;
     const required = (d.isRequired as boolean) ?? true;
@@ -106,7 +115,12 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       ? [Object.fromEntries(columns.map((c) => [c.key, c.type === "file_upload" ? [] : ""]))]
       : []
   );
-  const [listItems, setListItems] = useState<string[]>([""]);
+  const [listItems, setListItems] = useState<string[]>(() => {
+    if (Array.isArray(existingFromSession) && existingFromSession.length > 0) {
+      return existingFromSession.filter((v): v is string => typeof v === "string");
+    }
+    return [""];
+  });
   const [tagSelectedValues, setTagSelectedValues] = useState<string[]>(() => {
     const existing = sessionParams?.[questionKey];
     if (Array.isArray(existing)) {

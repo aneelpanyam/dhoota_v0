@@ -60,6 +60,7 @@ function isImageMime(item: Record<string, unknown>): boolean {
 export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const d = widget.data;
+  const effectiveOnPinToContext = (d._noPin as boolean) ? undefined : onPinToContext;
   const title = (d.title as string) ?? "Untitled Activity";
   const description = d.description as string | null;
   const status = d.status as string;
@@ -187,11 +188,11 @@ export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext
         )}
 
         {/* Action bar */}
-        {(widget.actions?.length || onPinToContext) && (
+        {(widget.actions?.length || effectiveOnPinToContext) && (
           <ActivityActionBar
             widget={widget}
             onAction={onAction}
-            onPinToContext={onPinToContext}
+            onPinToContext={effectiveOnPinToContext}
             onEdit={() => setIsEditing(true)}
             d={d}
             title={title}

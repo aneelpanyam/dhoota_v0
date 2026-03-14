@@ -11,7 +11,8 @@ import {
   UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
   ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
   Smartphone, Zap, Clock, BarChart3, Bookmark, ExternalLink,
-  MoreVertical, Tags, Share2,
+  MoreVertical, Tags, Share2, Megaphone, CreditCard, Globe, Settings,
+  HelpCircle, LayoutGrid, Info,
 } from "lucide-react";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
@@ -36,6 +37,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
   ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
   Smartphone, Zap, Calendar, Pin, Tags, Share2,
+  Megaphone, CreditCard, Globe, Settings, HelpCircle, LayoutGrid, Info,
 };
 
 const statusColors: Record<string, string> = {
@@ -149,8 +151,10 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
   const editOptionId = d.editOptionId as string | undefined;
   const editParamKey = d.editParamKey as string | undefined;
   const paginationOptionId = d.paginationOptionId as string | undefined;
-  const noPin = !!d._noPin;
-  const effectiveOnPinToContext = noPin ? undefined : onPinToContext;
+  const noPinItems = !!d._noPin || !!d._noPinItems;
+  const noPinCollection = !!d._noPin || !!d._noPinCollection;
+  const effectiveOnPinToContextItems = noPinItems ? undefined : onPinToContext;
+  const effectiveOnPinToContextCollection = noPinCollection ? undefined : onPinToContext;
 
   const hasActivityFields = items.length > 0 && "activity_date" in items[0] && "title" in items[0];
   const hasTagFields = items.length > 0 && ("color" in items[0] && "source" in items[0]);
@@ -300,7 +304,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                   <NoteListItem
                     item={item}
                     onAction={onAction}
-                    onPinToContext={effectiveOnPinToContext}
+                    onPinToContext={effectiveOnPinToContextItems}
                     columns={columns}
                   />
                 ) : hasBookmarkFields ? (
@@ -310,14 +314,14 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     onAction={onAction}
                   />
                 ) : hasTagFields ? (
-                  <TagListItem item={item} onOptionSelect={onOptionSelect} onPinToContext={effectiveOnPinToContext} columns={columns} />
+                  <TagListItem item={item} onOptionSelect={onOptionSelect} onPinToContext={effectiveOnPinToContextItems} columns={columns} />
                 ) : hasActivityFields ? (
                   <ActivityListItem
                     item={item}
                     actions={widget.actions}
                     onAction={onAction}
                     onEdit={() => setEditingItemId(item.id as string)}
-                    onPinToContext={effectiveOnPinToContext}
+                    onPinToContext={effectiveOnPinToContextItems}
                     columns={columns}
                   />
                 ) : (
@@ -332,7 +336,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                     viewParamKey={viewParamKey}
                     editOptionId={editOptionId}
                     editParamKey={editParamKey}
-                    onPinToContext={effectiveOnPinToContext}
+                    onPinToContext={effectiveOnPinToContextItems}
                   />
                 )}
               </div>
@@ -365,13 +369,13 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
             ) : (
               <span>{totalItems} item{totalItems !== 1 ? "s" : ""}</span>
             )}
-            {effectiveOnPinToContext && items.length > 0 && (
+            {effectiveOnPinToContextCollection && items.length > 0 && (
               <button
                 onClick={() => {
                   for (const item of items) {
                     const activityId = hasActivityFields ? (item.id as string | undefined) : undefined;
                     const viewAction = activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined;
-                    effectiveOnPinToContext(buildContextItem(item, columns, viewAction));
+                    effectiveOnPinToContextCollection(buildContextItem(item, columns, viewAction));
                   }
                 }}
                 className="flex items-center gap-1 text-primary/70 hover:text-primary transition"
@@ -824,6 +828,54 @@ function getFirstImageUrl(media: Record<string, unknown>[]): string | null {
   return null;
 }
 
+function isSimpleKeyValueObject(obj: unknown): obj is Record<string, string | number | boolean | string[]> {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  const o = obj as Record<string, unknown>;
+  return Object.values(o).every((v) =>
+    typeof v === "string" || typeof v === "number" || typeof v === "boolean" || (Array.isArray(v) && v.every((x) => typeof x === "string"))
+  );
+}
+
+function ContentKeyValueDisplay({ label, data }: { label: string; data: Record<string, unknown> }) {
+  const [expanded, setExpanded] = useState(false);
+  const skip = new Set(["content_raw", "text"]);
+  const pairs = Object.entries(data)
+    .filter(([k]) => !skip.has(k))
+    .map(([k, v]) => {
+      if (Array.isArray(v) && v.every((x) => typeof x === "string")) return { key: k, value: (v as string[]).join(", ") };
+      if (v != null && typeof v === "string") return { key: k, value: v };
+      if (v != null && typeof v === "number") return { key: k, value: String(v) };
+      if (v != null && typeof v === "boolean") return { key: k, value: v ? "Yes" : "No" };
+      return null;
+    })
+    .filter(Boolean) as { key: string; value: string }[];
+
+  if (pairs.length === 0) return null;
+
+  return (
+    <div className="w-full mt-1">
+      <button
+        onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition"
+      >
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        <span className="opacity-60">{label}:</span>
+        <span>{pairs.length} field{pairs.length !== 1 ? "s" : ""}</span>
+      </button>
+      {expanded && (
+        <dl className="mt-1 space-y-0.5 text-[11px]">
+          {pairs.map(({ key, value }) => (
+            <div key={key} className="flex gap-2">
+              <dt className="font-medium text-muted-foreground capitalize shrink-0">{key}:</dt>
+              <dd className="break-words">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function ExpandableJson({ label, data }: { label: string; data: unknown }) {
   const [expanded, setExpanded] = useState(false);
   const summary = Array.isArray(data)
@@ -913,7 +965,10 @@ function GenericListItem({
   const subtitleCol = titleCol
     ? columns.find((c) => c !== titleCol && TITLE_KEYS.has(c.key))
     : undefined;
-  const excluded = new Set([titleCol, subtitleCol].filter(Boolean));
+  const isPinned = item.pinned === true || item.pinned === "true";
+  // Exclude pinned from restCols: use it for visual prominence (icon + border) instead of "Pinned: Yes" badge
+  const pinnedCol = columns.find((c) => c.key === "pinned");
+  const excluded = new Set([titleCol, subtitleCol, pinnedCol].filter(Boolean));
   const restCols = columns.filter((c) => !excluded.has(c));
 
   const clickOptionId = viewOptionId ?? editOptionId;
@@ -943,11 +998,16 @@ function GenericListItem({
 
   return (
     <div
-      className={`flex items-center justify-between gap-3 ${isClickable ? "cursor-pointer" : ""}`}
+      className={`flex items-center justify-between gap-3 ${isClickable ? "cursor-pointer" : ""} ${isPinned ? "pl-2 border-l-2 border-amber-400/60" : ""}`}
       onClick={isClickable ? handleClick : undefined}
     >
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2">
+          {isPinned && (
+            <span title="Pinned" className="shrink-0">
+              <Pin className="h-3.5 w-3.5 text-amber-500" />
+            </span>
+          )}
           {titleCol && item[titleCol.key] != null && (
             <p className={`font-medium text-sm truncate ${isClickable ? "hover:text-primary transition" : ""} ${item.deleted_at ? "line-through opacity-60" : ""}`}>
               {String(item[titleCol.key])}
@@ -1022,6 +1082,9 @@ function GenericListItem({
             }
 
             if (typeof value === "object" && value !== null) {
+              if (isSimpleKeyValueObject(value)) {
+                return <ContentKeyValueDisplay key={col.key} label={col.label} data={value as Record<string, unknown>} />;
+              }
               return <ExpandableJson key={col.key} label={col.label} data={value} />;
             }
 
@@ -1050,7 +1113,7 @@ function GenericListItem({
             <Pin className="h-3.5 w-3.5" />
           </button>
         )}
-        {editOptionId && editParamKey && item.id != null && viewOptionId ? (
+        {editOptionId && editParamKey && item.id != null && viewOptionId && !actions?.some((a) => a.optionId === editOptionId) ? (
           <button
             onClick={handleEditClick}
             className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
@@ -1097,17 +1160,22 @@ function ItemActions({
   }, [dropdownOpen]);
 
   useEffect(() => {
-    if (variant === "dropdown" && dropdownOpen && triggerRef.current) {
+    if (dropdownOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setDropdownRect({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
     } else {
       setDropdownRect(null);
     }
-  }, [variant, dropdownOpen]);
+  }, [dropdownOpen]);
 
   if (!actions || actions.length === 0) return null;
 
-  const renderActionButton = (action: WidgetAction, ai: number) => {
+  const isZapOrDefault = (icon: string) => !iconMap[icon] || icon === "Zap";
+  const primaryActions = actions.filter((a) => !isZapOrDefault(a.icon ?? "Zap"));
+  const overflowActions = actions.filter((a) => isZapOrDefault(a.icon ?? "Zap"));
+  const hasOverflow = overflowActions.length > 0;
+
+  const renderActionButton = (action: WidgetAction, ai: number, showLabel = false) => {
     const Icon = iconMap[action.icon] ?? Zap;
     const isEdit = action.optionId === "activity.edit";
     return (
@@ -1128,14 +1196,14 @@ function ItemActions({
             });
           }
         }}
-        className={variant === "dropdown"
+        className={showLabel
           ? "w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted transition"
           : "p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
         }
         title={action.label}
       >
-        <Icon className="h-3.5 w-3.5" />
-        {variant === "dropdown" && <span>{action.label}</span>}
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        {showLabel && <span>{action.label}</span>}
       </button>
     );
   };
@@ -1157,7 +1225,7 @@ function ItemActions({
               className="item-actions-portal fixed py-1 rounded-lg border bg-card shadow-lg z-[9999] min-w-[180px]"
               style={{ top: dropdownRect.top, right: dropdownRect.right }}
             >
-              {actions.map((action, ai) => renderActionButton(action, ai))}
+              {actions.map((action, ai) => renderActionButton(action, ai, true))}
             </div>,
             document.body
           )}
@@ -1166,8 +1234,30 @@ function ItemActions({
   }
 
   return (
-    <div className="flex gap-1 shrink-0">
-      {actions.map((action, ai) => renderActionButton(action, ai))}
+    <div className="flex gap-1 shrink-0 items-center">
+      {primaryActions.map((action, ai) => renderActionButton(action, ai, false))}
+      {hasOverflow && (
+        <div ref={dropdownRef} className="relative">
+          <button
+            ref={triggerRef}
+            onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
+            title="More actions"
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+          {dropdownOpen && dropdownRect &&
+            createPortal(
+              <div
+                className="item-actions-portal fixed py-1 rounded-lg border bg-card shadow-lg z-[9999] min-w-[180px] max-h-[70vh] overflow-y-auto"
+                style={{ top: dropdownRect.top, right: dropdownRect.right }}
+              >
+                {overflowActions.map((action, ai) => renderActionButton(action, ai, true))}
+              </div>,
+              document.body
+            )}
+        </div>
+      )}
     </div>
   );
 }

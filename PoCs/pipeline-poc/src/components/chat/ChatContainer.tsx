@@ -44,9 +44,10 @@ export function ChatContainer() {
   }, [router]);
 
   const isPublic = sessionContext?.publicMode ?? false;
+  const sessionLoaded = sessionContext !== null;
   const { recordActivity } = useSessionTimeout({
     onTimeout: handleSessionTimeout,
-    enabled: !isPublic,
+    enabled: sessionLoaded && !isPublic,
   });
 
   useEffect(() => {
@@ -126,8 +127,6 @@ export function ChatContainer() {
     }
     return map;
   }, [chat.messages]);
-
-  const sessionLoaded = sessionContext !== null;
 
   if (!sessionLoaded) {
     return (

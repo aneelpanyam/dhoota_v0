@@ -150,6 +150,10 @@ const SELECT_OPTIONS: Record<string, { label: string; value: string }[]> = {
     { label: "Yes", value: "true" },
     { label: "No", value: "false" },
   ],
+  pinned: [
+    { label: "Yes", value: "true" },
+    { label: "No", value: "false" },
+  ],
 };
 
 const TEXTAREA_KEYS = new Set(["description", "content", "notes"]);

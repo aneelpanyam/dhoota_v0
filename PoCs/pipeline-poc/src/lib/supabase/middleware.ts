@@ -5,6 +5,7 @@ import { isPublicMode, isSuggestionBoxMode } from "@/lib/auth/public-mode";
 const PUBLIC_ALLOWED_ROUTES = [
   "/api/chat/init",
   "/api/chat/message",
+  "/api/chat/conversations",
   "/api/session",
   "/api/context-filters",
   "/api/media/serve",

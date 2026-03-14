@@ -34,6 +34,15 @@ const SPECIALIZED_FORMATTERS: Record<
   "admin.trace.lookup": formatAdminTraceLookup,
   "admin.tenant.view": formatAdminTenantView,
   "admin.user.view": formatAdminUserView,
+  "info_card.view": formatInfoCardView,
+  "info_card.create": formatInfoCardWriteResult,
+  "info_card.edit": formatInfoCardWriteResult,
+  "announcement.view": formatAnnouncementView,
+  "announcement.create": formatAnnouncementWriteResult,
+  "announcement.edit": formatAnnouncementWriteResult,
+  "admin.announcement.view": formatAnnouncementView,
+  "admin.info_card.view": formatInfoCardView,
+  "public.about": formatPublicAbout,
 };
 
 export async function formatResponse(
@@ -388,6 +397,8 @@ function formatGenericResults(
     summary = "Done! Here are the results.";
   } else if (totalRows === 0) {
     summary = `No ${option.name.toLowerCase().replace(/^(view|list|my)\s+/i, "")} found.`;
+  } else if (option.list_summary_template) {
+    summary = option.list_summary_template.replace(/\{\{count\}\}/g, String(totalRows));
   } else {
     summary = `Found ${totalRows} result${totalRows !== 1 ? "s" : ""}.`;
   }
@@ -498,6 +509,121 @@ function formatActivityView(
   return {
     summary: `Here are the details for "${cardData.title}".`,
     widgets: [{ type: "activity_card", data: cardData }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatInfoCardView(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const result = sqlResults.find((r) => r.templateName === "get_info_card");
+  const card = result?.rows[0];
+  if (!card) {
+    return {
+      summary: "Info card not found.",
+      widgets: [{ type: "text_response", data: { text: "This info card could not be found or may have been deleted." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const title = (card.title as string) ?? "Info Card";
+  return {
+    summary: `Here are the details for "${title}".`,
+    widgets: [{ type: "info_card", data: card }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatInfoCardWriteResult(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const writeResult = sqlResults.find((r) => r.queryType === "write");
+  const card = writeResult?.rows[0];
+  if (!card) {
+    return {
+      summary: "Done!",
+      widgets: [{ type: "text_response", data: { text: "The operation completed successfully." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const isCreate = option.id === "info_card.create";
+  const title = (card.title as string) ?? "Info Card";
+  return {
+    summary: isCreate
+      ? `"${title}" has been created successfully.`
+      : `"${title}" has been updated.`,
+    widgets: [{ type: "info_card", data: card }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatPublicAbout(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const result = sqlResults.find((r) => r.templateName === "get_public_profile");
+  const row = result?.rows[0];
+  if (!row) {
+    return {
+      summary: "Profile not found.",
+      widgets: [{ type: "text_response", data: { text: "This profile could not be found." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const displayName = (row.display_name as string) ?? "Representative";
+  let welcomeMessage = (row.welcome_message as string) ?? "";
+  // Convert literal \r\n to actual newlines for proper rendering
+  welcomeMessage = welcomeMessage.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+  const text = `## ${displayName}\n\n${welcomeMessage}`;
+  return {
+    summary: `About ${displayName}`,
+    widgets: [{ type: "text_response", data: { text } }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatAnnouncementView(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const result = sqlResults.find((r) => r.templateName === "get_announcement");
+  const announcement = result?.rows[0];
+  if (!announcement) {
+    return {
+      summary: "Announcement not found.",
+      widgets: [{ type: "text_response", data: { text: "This announcement could not be found or may have been deleted." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const title = (announcement.title as string) ?? "Announcement";
+  return {
+    summary: `Here are the details for "${title}".`,
+    widgets: [{ type: "announcement_card", data: announcement }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatAnnouncementWriteResult(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const writeResult = sqlResults.find((r) => r.queryType === "write");
+  const announcement = writeResult?.rows[0];
+  if (!announcement) {
+    return {
+      summary: "Done!",
+      widgets: [{ type: "text_response", data: { text: "The operation completed successfully." } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const isCreate = option.id === "announcement.create";
+  const title = (announcement.title as string) ?? "Announcement";
+  return {
+    summary: isCreate
+      ? `"${title}" has been created successfully.`
+      : `"${title}" has been updated.`,
+    widgets: [{ type: "announcement_card", data: announcement }],
     followUpOptionIds: option.follow_up_option_ids,
   };
 }
@@ -1267,7 +1393,6 @@ function formatAdminOptionView(
         page: 1,
         pageSize: 50,
         _noItemActions: true,
-        _noPin: true,
       },
     });
   }
@@ -1286,7 +1411,6 @@ function formatAdminOptionView(
         viewOptionId: "admin.option.view",
         viewParamKey: "option_id",
         _noItemActions: true,
-        _noPin: true,
       },
     });
   }

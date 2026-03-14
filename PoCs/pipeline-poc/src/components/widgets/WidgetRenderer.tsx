@@ -19,6 +19,8 @@ import { ErrorCardWidget } from "./ErrorCardWidget";
 import { ContextPickerWidget } from "./ContextPickerWidget";
 import { CalendarWidget } from "./CalendarWidget";
 import { TimelineWidget } from "./TimelineWidget";
+import { InfoCardWidget } from "./InfoCardWidget";
+import { AnnouncementCardWidget } from "./AnnouncementCardWidget";
 
 export interface WidgetRendererProps {
   widget: Widget;
@@ -58,6 +60,8 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   code_list: TextResponseWidget,
   website_preview: TextResponseWidget,
   status_ticket: TextResponseWidget,
+  info_card: InfoCardWidget,
+  announcement_card: AnnouncementCardWidget,
 };
 
 export function WidgetRenderer(props: WidgetRendererProps) {

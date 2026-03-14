@@ -24,7 +24,9 @@ export async function startQASession(
     (k) => knownParams[k] !== undefined && knownParams[k] !== null
   );
   const allRemainingOptional = remaining.every((q) => !q.is_required);
-  if (hasPrefilledParams && allRemainingOptional) {
+  // Don't skip when remaining includes tag_select - user needs to see the tag selector (e.g. activity.manage_tags)
+  const hasTagSelectRemaining = remaining.some((q) => q.inline_widget === "tag_select");
+  if (hasPrefilledParams && allRemainingOptional && !hasTagSelectRemaining) {
     return { status: "complete", collectedParams: knownParams };
   }
 

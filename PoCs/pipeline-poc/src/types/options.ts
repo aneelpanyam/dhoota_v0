@@ -24,6 +24,9 @@ export interface OptionDefinition {
   entity_type: string | null;
   has_writes?: boolean;
   loading_message?: string | null;
+  list_summary_template?: string | null;
+  pinnable_items?: boolean;
+  pinnable_collection?: boolean;
   handler_id?: string | null;
 }
 
