@@ -21,6 +21,11 @@ const INJECTION_PATTERNS = [
   /\bact\s+as\s+(if\s+you\s+are|a\s+different)\b/i,
   /\bnew\s+instructions?\s*:\s*/i,
   /\bprompt\s*:\s*["']/i,
+  // Extraction / system-detail attempts
+  /\b(what|show|reveal|display|output)\s+(is|are)\s+(your|the)\s+(system\s+)?(prompt|instructions?)\b/i,
+  /\brepeat\s+(your|the)\s+(system\s+)?(prompt|instructions?)\s+(above|before)\b/i,
+  /\bprint\s+(your|the)\s+(system\s+)?prompt\b/i,
+  /\b(show|reveal)\s+(me\s+)?(your|the)\s+instructions?\b/i,
 ];
 
 /** Strip known injection patterns from user input. */

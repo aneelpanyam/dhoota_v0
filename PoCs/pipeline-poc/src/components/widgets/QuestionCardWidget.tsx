@@ -2,8 +2,9 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
-import { Send, X, Upload, FileIcon, FileText, Plus, Trash2 } from "lucide-react";
+import { Send, X, Upload, FileIcon, FileText, Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
+import { isValidEmail, validateAccessCodeStrength, validateByParamSchema } from "@/lib/validation";
 
 interface PendingFile {
   file: File;
@@ -49,6 +50,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const entityContext = d.entityContext as EntityContextData | null | undefined;
   const currentAvatarUrl = d.currentAvatarUrl as string | undefined;
   const currentBannerUrl = d.currentBannerUrl as string | undefined;
+  const paramSchema = d.paramSchema as Record<string, unknown> | undefined;
 
   const dynamicSource = widgetConfig.source as string | undefined;
   const [dynamicOptions, setDynamicOptions] = useState<DynamicOption[]>([]);
@@ -60,7 +62,10 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
 
   useEffect(() => {
     const source = dynamicSource ?? (inlineWidget === "tag_select" ? "tags" : null);
-    if (!source) return;
+    if (!source) {
+      setDynamicOptions([]);
+      return;
+    }
     let cancelled = false;
     setDynamicLoading(true);
     const params = new URLSearchParams({ source });
@@ -97,12 +102,13 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   });
   const [selectValue, setSelectValue] = useState(() => {
     if (existingFromSession != null && existingFromSession !== "") return String(existingFromSession);
-    const options = (((d.widgetConfig as Record<string, unknown>) ?? {}).options as string[]) ?? [];
+    const options = (((d.widgetConfig as Record<string, unknown>) ?? {}).options as Array<string | { value: string; label: string }>) ?? [];
     const defaultVal = ((d.widgetConfig as Record<string, unknown>) ?? {}).default as string | undefined;
     const required = (d.isRequired as boolean) ?? true;
     if (defaultVal) return defaultVal;
     if (!required) return "";
-    return options[0] ?? "";
+    const first = options[0];
+    return typeof first === "string" ? first : first?.value ?? "";
   });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,11 +118,19 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     label: string;
     required?: boolean;
     type?: string;
+    format?: string;
     accept?: string;
     multiple?: boolean;
     options?: Array<{ value: string; label: string }> | string[];
   };
   const columns = (widgetConfig.columns as TableColumn[]) ?? [];
+  const [passwordValue, setPasswordValue] = useState(() =>
+    effectiveInlineWidget === "password_with_confirmation" && existingFromSession != null && typeof existingFromSession === "string" ? existingFromSession : ""
+  );
+  const [passwordConfirmValue, setPasswordConfirmValue] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [tableRows, setTableRows] = useState<Record<string, unknown>[]>(() =>
     columns.length > 0
       ? [Object.fromEntries(columns.map((c) => [c.key, c.type === "file_upload" ? [] : ""]))]
@@ -193,12 +207,13 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   };
 
   const handleSubmit = () => {
+    setValidationError(null);
     let answer: unknown;
     const widget = effectiveInlineWidget;
 
     switch (widget) {
       case "date_picker":
-        answer = new Date(dateValue).toISOString();
+        answer = dateValue.slice(0, 10);
         break;
       case "select":
       case "visibility_select":
@@ -230,12 +245,39 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
             return String(v ?? "").trim();
           });
         });
+        if (paramSchema && valid.length > 0) {
+          const result = validateByParamSchema(valid, paramSchema);
+          if (!result.valid) {
+            setValidationError(result.message ?? "Invalid input");
+            return;
+          }
+        } else {
+          for (const row of valid) {
+            for (const col of columns) {
+              if (col.format === "email") {
+                const v = String(row[col.key] ?? "").trim();
+                if (v && !isValidEmail(v)) {
+                  setValidationError(`Invalid email in row: ${v}`);
+                  return;
+                }
+              }
+            }
+          }
+        }
         answer = valid.length > 0 ? valid : null;
         break;
       }
       case "list": {
         const filled = listItems.filter((s) => s.trim().length > 0);
-        answer = filled.length > 0 ? filled : null;
+        const listAnswer = filled.length > 0 ? filled : null;
+        if (paramSchema && listAnswer && listAnswer.length > 0) {
+          const result = validateByParamSchema(listAnswer, paramSchema);
+          if (!result.valid) {
+            setValidationError(result.message ?? "Invalid input");
+            return;
+          }
+        }
+        answer = listAnswer;
         break;
       }
       case "markdown_editor":
@@ -244,9 +286,55 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       case "tag_select":
         answer = tagSelectedValues.length > 0 ? tagSelectedValues : null;
         break;
-      default:
+      case "password_with_confirmation": {
+        const pwd = passwordValue.trim();
+        const confirm = passwordConfirmValue.trim();
+        if (!pwd && !confirm) {
+          answer = null;
+          break;
+        }
+        if (pwd !== confirm) {
+          setValidationError("Access code and confirmation do not match");
+          return;
+        }
+        const strengthRules = {
+          minLength: widgetConfig.minLength as number | undefined,
+          maxLength: widgetConfig.maxLength as number | undefined,
+          requireUppercase: widgetConfig.requireUppercase as boolean | undefined,
+          requireLowercase: widgetConfig.requireLowercase as boolean | undefined,
+          requireDigit: widgetConfig.requireDigit as boolean | undefined,
+          requireSpecial: widgetConfig.requireSpecial as boolean | undefined,
+          pattern: widgetConfig.pattern as string | undefined,
+        };
+        const strength = validateAccessCodeStrength(pwd, strengthRules);
+        if (!strength.valid) {
+          setValidationError(strength.errors[0] ?? "Invalid access code");
+          return;
+        }
+        answer = pwd;
+        break;
+      }
+      case "password":
         answer = value.trim() || null;
         break;
+      default: {
+        const trimmed = value.trim();
+        if (paramSchema && trimmed) {
+          const result = validateByParamSchema(trimmed, paramSchema);
+          if (!result.valid) {
+            setValidationError(result.message ?? "Invalid input");
+            return;
+          }
+        } else if (!paramSchema) {
+          const format = (widgetConfig.format as string) ?? (questionKey === "email" ? "email" : null);
+          if (format === "email" && trimmed && !isValidEmail(trimmed)) {
+            setValidationError("Please enter a valid email address");
+            return;
+          }
+        }
+        answer = trimmed || null;
+        break;
+      }
     }
 
     if (answer === null && isRequired) return;
@@ -378,16 +466,28 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
                           </select>
                         ) : (
                           <input
-                            type="text"
+                            type={col.format === "email" ? "email" : "text"}
+                            inputMode={
+                              col.type === "number" || col.format === "number" || col.format === "currency"
+                                ? "decimal"
+                                : undefined
+                            }
                             value={(row[col.key] ?? "") as string}
                             onChange={(e) => {
+                              const v = e.target.value;
+                              const isNumeric =
+                                col.type === "number" || col.format === "number" || col.format === "currency";
+                              const filtered = isNumeric
+                                ? v.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")
+                                : v;
                               setTableRows((prev) => {
                                 const next = [...prev];
-                                next[ri] = { ...next[ri], [col.key]: e.target.value };
+                                next[ri] = { ...next[ri], [col.key]: filtered };
                                 return next;
                               });
+                              setValidationError(null);
                             }}
-                            placeholder={col.label}
+                            placeholder={col.format === "email" ? "e.g. user@example.com" : col.label}
                             className="w-full px-2 py-1 rounded border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
                           />
                         )}
@@ -406,6 +506,9 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
               </tbody>
             </table>
           </div>
+          {validationError && (
+            <p className="text-sm text-destructive">{validationError}</p>
+          )}
           <div className="flex items-center gap-2">
             <button
               onClick={() =>
@@ -585,6 +688,77 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
             )}
           </div>
         </div>
+      ) : effectiveInlineWidget === "password_with_confirmation" ? (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Access code</label>
+            <div className="relative flex items-center gap-2">
+              <input
+                type={passwordVisible ? "text" : "password"}
+                value={passwordValue}
+                onChange={(e) => {
+                  setPasswordValue(e.target.value);
+                  setValidationError(null);
+                }}
+                placeholder={(widgetConfig.placeholder as string) ?? "e.g. ACME-7X9K"}
+                className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setPasswordVisible((v) => !v)}
+                className="p-2 rounded text-muted-foreground hover:text-foreground"
+                aria-label={passwordVisible ? "Hide" : "Show"}
+              >
+                {passwordVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Confirm access code</label>
+            <div className="relative flex items-center gap-2">
+              <input
+                type={confirmVisible ? "text" : "password"}
+                value={passwordConfirmValue}
+                onChange={(e) => {
+                  setPasswordConfirmValue(e.target.value);
+                  setValidationError(null);
+                }}
+                placeholder="Re-enter to confirm"
+                className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setConfirmVisible((v) => !v)}
+                className="p-2 rounded text-muted-foreground hover:text-foreground"
+                aria-label={confirmVisible ? "Hide" : "Show"}
+              >
+                {confirmVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          {validationError && (
+            <p className="text-sm text-destructive">{validationError}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            {!isRequired && (
+              <button
+                onClick={() => {
+                  setValidationError(null);
+                  onQAResponse(optionId, { ...sessionParams, [questionKey]: null });
+                }}
+                className="px-3 py-1.5 rounded-lg border text-sm text-muted-foreground hover:bg-muted/50"
+              >
+                Skip (auto-generate)
+              </button>
+            )}
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="flex items-end gap-2">
           {effectiveInlineWidget === "date_picker" ? (
@@ -614,22 +788,56 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
                         {opt.label}
                       </option>
                     ))
-                  : ((widgetConfig.options as string[]) ?? []).map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </option>
-                    ))}
+                  : (() => {
+                      const opts = (widgetConfig.options as Array<string | { value: string; label: string }>) ?? [];
+                      return opts.map((opt) => {
+                        const val = typeof opt === "string" ? opt : opt.value;
+                        const label = typeof opt === "string"
+                          ? opt.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                          : opt.label;
+                        return (
+                          <option key={val} value={val}>
+                            {label}
+                          </option>
+                        );
+                      });
+                    })()}
               </select>
             )
           ) : (
-            <input
-              type="text"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="Type your answer..."
-              className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+            <div className="flex-1 space-y-1 min-w-0">
+              <input
+                type={questionKey === "email" || widgetConfig.format === "email" ? "email" : "text"}
+                inputMode={
+                  questionKey === "email" || widgetConfig.format === "email"
+                    ? "email"
+                    : paramSchema?.type === "number" || widgetConfig.format === "number" || widgetConfig.format === "currency"
+                      ? "decimal"
+                      : "text"
+                }
+                value={value}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const isNumeric =
+                    paramSchema?.type === "number" || widgetConfig.format === "number" || widgetConfig.format === "currency";
+                  const filtered = isNumeric
+                    ? v.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")
+                    : v;
+                  setValue(filtered);
+                  setValidationError(null);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                placeholder={
+                  questionKey === "email"
+                    ? "e.g. user@example.com"
+                    : (widgetConfig.placeholder as string) ?? "Type your answer..."
+                }
+                className="w-full px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              {validationError && (
+                <p className="text-xs text-destructive">{validationError}</p>
+              )}
+            </div>
           )}
 
           <button

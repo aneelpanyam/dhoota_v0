@@ -30,13 +30,18 @@ export async function startQASession(
     return { status: "complete", collectedParams: knownParams };
   }
 
-  const questionData = remaining.map((q) => ({
-    questionText: q.question_text,
-    questionKey: q.question_key,
-    inlineWidget: q.inline_widget,
-    widgetConfig: q.widget_config,
-    isRequired: q.is_required,
-  }));
+  const props = (option.input_schema as { properties?: Record<string, unknown> })?.properties ?? {};
+  const questionData = remaining.map((q) => {
+    const schema = props[q.question_key] as Record<string, unknown> | undefined;
+    return {
+      questionText: q.question_text,
+      questionKey: q.question_key,
+      inlineWidget: q.inline_widget,
+      widgetConfig: q.widget_config,
+      isRequired: q.is_required,
+      paramSchema: schema ?? undefined,
+    };
+  });
 
   return {
     status: "need_more",
@@ -67,13 +72,18 @@ export async function continueQASession(
     return { status: "complete", collectedParams: merged };
   }
 
-  const questionData = remaining.map((q) => ({
-    questionText: q.question_text,
-    questionKey: q.question_key,
-    inlineWidget: q.inline_widget,
-    widgetConfig: q.widget_config,
-    isRequired: q.is_required,
-  }));
+  const props = (option.input_schema as { properties?: Record<string, unknown> })?.properties ?? {};
+  const questionData = remaining.map((q) => {
+    const schema = props[q.question_key] as Record<string, unknown> | undefined;
+    return {
+      questionText: q.question_text,
+      questionKey: q.question_key,
+      inlineWidget: q.inline_widget,
+      widgetConfig: q.widget_config,
+      isRequired: q.is_required,
+      paramSchema: schema ?? undefined,
+    };
+  });
 
   return {
     status: "need_more",

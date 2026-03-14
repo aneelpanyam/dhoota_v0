@@ -165,11 +165,15 @@ Options use dot-namespaced IDs: `{category}.{action}`
 6. **`question_key` must match `param_mapping`** values in the corresponding `sql_templates`. The key maps directly to `params.{question_key}`.
 
 7. **`widget_config` patterns**:
-   - Static options: `{"options": ["a", "b", "c"]}`
+   - Static options: `{"options": ["a", "b", "c"]}` or `{"options": [{"value":"x","label":"X"}]}`
    - Default value: `{"default": "a"}`
    - Placeholder: `{"placeholder": "Enter something"}`
    - Dynamic source: `{"source": "tenants"}` (fetched from API)
    - File accept: `{"accept": "image/*,video/*", "multiple": true}`
+   - **Format/validation** (use with `input_schema` type for full validation):
+     - `{"format": "email"}` → email validation, email keyboard
+     - `{"format": "currency"}` or `{"format": "number"}` → numeric-only input, decimal keyboard, rejects non-numeric chars
+     - For numbers: also set `input_schema.properties.{key}.type: "number"` so backend validates
 
 ### Follow-up Design Rules
 

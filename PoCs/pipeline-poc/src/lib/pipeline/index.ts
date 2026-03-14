@@ -202,6 +202,11 @@ export async function processMessage(
         }));
       }
 
+      if (resolved.option.id === "admin.user.provision" && confirmParams.tenant_id) {
+        const tenantName = await fetchTenantName(confirmParams.tenant_id as string);
+        if (tenantName) confirmParams = { ...confirmParams, tenant_name: tenantName };
+      }
+
       confirmFields = ensureConfirmFields(confirmFields, confirmParams, resolved.option.id);
 
       if (shouldConfirm) {
@@ -286,7 +291,8 @@ export async function processMessage(
 
     const resourceId = extractResourceIdFromParams(resolved.extractedParams ?? {}, resolved.option)
       ?? extractResourceId(sqlResults);
-    const followUps = buildFollowUps(resolved.option, context, resourceId);
+    const resultParams = extractResultParams(resolved.option, sqlResults);
+    const followUps = buildFollowUps(resolved.option, context, resourceId, resultParams);
 
     const pipelineResponse: ChatMessageResponse = {
       messageId: generateId(),
@@ -458,7 +464,8 @@ async function handleQAResponse(
     }));
 
     const resourceId = extractResourceId(sqlResults);
-    const followUps = buildFollowUps(option, context, resourceId);
+    const resultParams = extractResultParams(option, sqlResults);
+    const followUps = buildFollowUps(option, context, resourceId, resultParams);
 
     return {
       messageId: generateId(),
@@ -506,6 +513,11 @@ async function handleQAResponse(
       value: String(value),
       inferred: false,
     }));
+  }
+
+  if (option.id === "admin.user.provision" && confirmParams.tenant_id) {
+    const tenantName = await fetchTenantName(confirmParams.tenant_id as string);
+    if (tenantName) confirmParams = { ...confirmParams, tenant_name: tenantName };
   }
 
   confirmFields = ensureConfirmFields(confirmFields, confirmParams, option.id);
@@ -566,7 +578,8 @@ async function handleConfirmation(
     return buildErrorResponse("Option not found.", context, defaultOpts);
   }
 
-  const params = request.params ?? {};
+  const rawParams = request.params ?? {};
+  const params = normalizeParams(rawParams, option.input_schema);
 
   const validation = validateParams(params, option.input_schema);
   if (!validation.valid) {
@@ -704,7 +717,8 @@ async function handleConfirmation(
     actions: w.actions,
     bookmarkable: true,
   }));
-  const followUps = buildFollowUps(option, context, resourceId);
+  const resultParams = extractResultParams(option, sqlResults);
+  const followUps = buildFollowUps(option, context, resourceId, resultParams);
 
   return {
     messageId: generateId(),
@@ -750,6 +764,22 @@ function extractResourceIdFromParams(
   const paramKey = `${entityType}_id`;
   if (params[paramKey]) return String(params[paramKey]);
   return undefined;
+}
+
+/** Extract params from SQL results for follow-up options (e.g. tenant_id from user view). */
+function extractResultParams(
+  option: import("@/types/options").OptionDefinition,
+  sqlResults: import("@/types/pipeline").SqlResult[]
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const result of sqlResults) {
+    if (result.rows.length === 1) {
+      const row = result.rows[0] as Record<string, unknown>;
+      if (row.tenant_id != null) out.tenant_id = String(row.tenant_id);
+      if (row.user_id != null) out.user_id = String(row.user_id);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function ensureInfoCardContentParams(params: Record<string, unknown>, optionId: string): Record<string, unknown> {
@@ -813,10 +843,11 @@ function isChildOption(optionId: string): boolean {
 function buildFollowUps(
   option: import("@/types/options").OptionDefinition,
   context: UserContext,
-  resourceId?: string
+  resourceId?: string,
+  resultParams?: Record<string, string>
 ): import("@/types/api").OptionReference[] {
   const entityType = deriveEntityType(option);
-  const paramKey = `${entityType}_id`;
+  const currentParamKey = `${entityType}_id`;
 
   return option.follow_up_option_ids
     .map((id) => context.availableOptions.find((o) => o.id === id))
@@ -828,8 +859,13 @@ function buildFollowUps(
         icon: opt!.icon ?? "Zap",
         loadingMessage: opt!.loading_message ?? undefined,
       };
-      if (resourceId && paramKey) {
-        ref.params = { [paramKey]: resourceId };
+      const targetEntityType = deriveEntityType(opt!);
+      const targetParamKey = `${targetEntityType}_id`;
+      const value =
+        resultParams?.[targetParamKey] ??
+        (targetParamKey === currentParamKey ? resourceId : undefined);
+      if (value) {
+        ref.params = { [targetParamKey]: value };
       }
       return ref;
     });
@@ -868,6 +904,7 @@ const HIDDEN_DISPLAY_KEYS = new Set([
 ]);
 
 const CONFIRM_FIELD_ORDER: Record<string, string[]> = {
+  "admin.user.provision": ["tenant_name", "email", "display_name", "user_type"],
   "announcement.create": ["title", "content", "visibility", "pinned"],
   "announcement.edit": ["title", "content", "visibility", "pinned"],
   "info_card.create": ["title", "content", "card_type", "visibility"],
@@ -1065,6 +1102,7 @@ interface QuestionData {
   inlineWidget?: string | null;
   widgetConfig?: Record<string, unknown>;
   isRequired?: boolean;
+  paramSchema?: Record<string, unknown>;
 }
 
 async function enrichTagQuestionsWithPrefetch(
@@ -1191,6 +1229,16 @@ async function enrichSessionParamsWithPublicSiteConfig(
     return merged;
   } catch {
     return params;
+  }
+}
+
+async function fetchTenantName(tenantId: string): Promise<string | null> {
+  try {
+    const db = createServiceSupabase();
+    const { data } = await db.from("tenants").select("name").eq("id", tenantId).single();
+    return (data?.name as string) ?? null;
+  } catch {
+    return null;
   }
 }
 

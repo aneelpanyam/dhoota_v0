@@ -81,7 +81,7 @@ export function SidePanel({ cards, isOpen, onClose }: SidePanelProps) {
         <h3 className="font-semibold text-foreground">Info</h3>
         <button
           onClick={onClose}
-          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
+          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition lg:hidden"
           aria-label="Close panel"
         >
           <X className="h-5 w-5" />

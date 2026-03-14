@@ -100,6 +100,13 @@ function MediaPreviewGrid({ files }: { files: MediaFile[] }) {
   );
 }
 
+/** Valid user_type enum values - used to detect/fix UUID mistakenly sent as user_type */
+const VALID_USER_TYPES = new Set(["worker", "candidate", "representative", "team_worker"]);
+
+function isUuidLike(val: unknown): boolean {
+  return typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(val);
+}
+
 const SELECT_OPTIONS: Record<string, { label: string; value: string }[]> = {
   status: [
     { label: "Completed", value: "completed" },
@@ -196,13 +203,22 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
   const params = (d.params as Record<string, unknown>) ?? {};
   const entityContext = d.entityContext as EntityContextData | null | undefined;
 
-  const editableKeys = deriveEditableKeys(fields, params);
+  const editableKeys = deriveEditableKeys(fields, params).filter(
+    (k) => !(optionId === "admin.user.provision" && k === "tenant_name")
+  );
 
   const [isEditing, setIsEditing] = useState(false);
   const [editParams, setEditParams] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const key of editableKeys) {
-      if (params[key] != null) initial[key] = String(params[key]);
+      if (params[key] != null) {
+        let val = String(params[key]);
+        // Fix: user_type as UUID (tenant_id leaked) -> use "worker" so dropdown shows correct option
+        if (key === "user_type" && optionId === "admin.user.provision" && isUuidLike(val) && !VALID_USER_TYPES.has(val)) {
+          val = "worker";
+        }
+        initial[key] = val;
+      }
     }
     return initial;
   });
@@ -216,6 +232,17 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
       for (const [key, val] of Object.entries(editParams)) {
         if (val.trim()) finalParams[key] = val.trim();
       }
+    }
+
+    // Fix: when user_type is a UUID (e.g. tenant_id leaked due to no change event on default select),
+    // replace with valid default so validation passes
+    if (
+      optionId === "admin.user.provision" &&
+      finalParams.user_type != null &&
+      isUuidLike(finalParams.user_type) &&
+      !VALID_USER_TYPES.has(String(finalParams.user_type))
+    ) {
+      finalParams.user_type = "worker";
     }
 
     const existingTags = Array.isArray(finalParams.tags)

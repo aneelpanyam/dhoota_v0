@@ -252,18 +252,21 @@ function NextActionsSection({
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [showOtherOptions, setShowOtherOptions] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const showDefaultOptions =
+  const canShowDefaultOptions =
     isLastMessage &&
-    response.followUps.length === 0 &&
     response.conversationState === "active" &&
     response.defaultOptions.length > 0 &&
     !response.widgets.some((w) => w.type === "default_options_menu");
 
   const hasFollowUps = response.followUps.length > 0;
-  const hasDefaultOpts = showDefaultOptions;
-  const hasAny = hasFollowUps || hasDefaultOpts;
+  const hasDefaultOpts = canShowDefaultOptions;
+  // When no follow-ups: show default options inline. When follow-ups exist: show them + expandable "Other options"
+  const showDefaultOptionsInline = hasDefaultOpts && !hasFollowUps;
+  const showOtherOptionsTrigger = hasFollowUps && hasDefaultOpts;
+  const hasAny = hasFollowUps || showDefaultOptionsInline || showOtherOptionsTrigger;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -346,9 +349,9 @@ function NextActionsSection({
   );
 
   return (
-    <div className="pt-1">
+    <div className="pt-1 space-y-2">
       {/* Desktop: inline buttons */}
-      <div className="hidden md:flex flex-wrap gap-2">
+      <div className="hidden md:flex flex-wrap gap-2 items-center">
         {hasFollowUps &&
           response.followUps.map((fu) => {
             const activityId = fu.params?.activity_id as string | undefined;
@@ -401,7 +404,7 @@ function NextActionsSection({
               </button>
             );
           })}
-        {hasDefaultOpts &&
+        {showDefaultOptionsInline &&
           response.defaultOptions.map((opt) => (
             <button
               key={opt.optionId}
@@ -411,6 +414,37 @@ function NextActionsSection({
               {opt.name}
             </button>
           ))}
+        {showOtherOptionsTrigger && (
+          <>
+            {!showOtherOptions ? (
+              <button
+                onClick={() => setShowOtherOptions(true)}
+                className="text-xs px-3 py-1.5 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
+              >
+                More options
+              </button>
+            ) : (
+              <>
+                <span className="text-[10px] text-muted-foreground/60 px-1">— or —</span>
+                {response.defaultOptions.map((opt) => (
+                  <button
+                    key={opt.optionId}
+                    onClick={() => onOptionSelect(opt.optionId, opt.params)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
+                  >
+                    {opt.name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowOtherOptions(false)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
+                >
+                  Show less
+                </button>
+              </>
+            )}
+          </>
+        )}
       </div>
       {/* Mobile: dropdown */}
       <div ref={dropdownRef} className="md:hidden relative">

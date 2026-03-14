@@ -16,11 +16,13 @@ export const traceLogsHandler: PipelineHandler = {
 
     const logs = await queryLogsByTraceId(traceId);
     const rows = logs.map((log) => ({
-      timestamp: log.timestamp,
+      timestamp: (log.timestamp as string) ?? (log as Record<string, unknown>).timestamp,
       level: log.level,
       service: log.service,
       message: log.message,
       data: log.data,
+      traceId: log.traceId,
+      durationMs: log.durationMs,
     }));
 
     const result: SqlResult = {

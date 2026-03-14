@@ -11,6 +11,10 @@ import {
   CreditCard,
   MessageSquare,
   User,
+  DollarSign,
+  Zap,
+  BarChart3,
+  AlertCircle,
 } from "lucide-react";
 
 interface StatItem {
@@ -20,6 +24,13 @@ interface StatItem {
 
 const ICON_MAP: Record<string, { icon: typeof Activity; color: string }> = {
   total: { icon: Activity, color: "text-primary" },
+  total_cost: { icon: DollarSign, color: "text-green-500" },
+  llm_calls: { icon: Zap, color: "text-amber-500" },
+  input_tokens: { icon: BarChart3, color: "text-blue-500" },
+  output_tokens: { icon: BarChart3, color: "text-indigo-500" },
+  total_executions: { icon: Zap, color: "text-primary" },
+  avg_latency_ms: { icon: Clock, color: "text-blue-500" },
+  total_errors: { icon: AlertCircle, color: "text-red-500" },
   completed: { icon: CheckCircle2, color: "text-green-500" },
   planned: { icon: Clock, color: "text-blue-500" },
   this_week: { icon: CalendarDays, color: "text-blue-500" },

@@ -11,6 +11,7 @@ interface QuestionData {
   inlineWidget?: string | null;
   widgetConfig?: Record<string, unknown>;
   isRequired?: boolean;
+  paramSchema?: Record<string, unknown>;
 }
 
 interface Props {
@@ -64,6 +65,7 @@ export function QuestionStepperWidget({
       entityContext,
       currentAvatarUrl: currentQuestion.questionKey === "avatar_keys" ? currentAvatarUrl : undefined,
       currentBannerUrl: currentQuestion.questionKey === "banner_keys" ? currentBannerUrl : undefined,
+      paramSchema: currentQuestion.paramSchema ?? undefined,
     },
     bookmarkable: false,
   };

@@ -1046,7 +1046,7 @@ const BOOLEAN_KEYS = new Set([
   "is_active", "pinned", "enabled", "override_enabled", "success",
 ]);
 
-function formatCellValue(key: string, value: unknown): string {
+function formatCellValue(key: string, value: unknown, col?: { key: string; label: string; format?: string }): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (key.includes("cost")) return `$${value.toFixed(4)}`;
@@ -1055,6 +1055,13 @@ function formatCellValue(key: string, value: unknown): string {
   }
   if (typeof value === "string") {
     if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      if (col?.format === "datetime") {
+        return new Date(value).toLocaleString("en-IN", {
+          day: "numeric", month: "short", year: "numeric",
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+          hour12: false,
+        });
+      }
       return new Date(value).toLocaleDateString("en-IN", {
         day: "numeric", month: "short", year: "numeric",
       });
@@ -1223,7 +1230,7 @@ function GenericListItem({
 
             return (
               <span key={col.key} className="text-[11px] text-muted-foreground">
-                <span className="opacity-60">{col.label}: </span>{formatCellValue(col.key, value)}
+                <span className="opacity-60">{col.label}: </span>{formatCellValue(col.key, value, col)}
               </span>
             );
           })}

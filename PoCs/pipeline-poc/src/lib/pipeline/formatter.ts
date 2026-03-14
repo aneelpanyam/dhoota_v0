@@ -34,6 +34,7 @@ const SPECIALIZED_FORMATTERS: Record<
   "admin.trace.lookup": formatAdminTraceLookup,
   "admin.tenant.view": formatAdminTenantView,
   "admin.user.view": formatAdminUserView,
+  "admin.usage.view": formatAdminUsageView,
   "info_card.view": formatInfoCardView,
   "info_card.create": formatInfoCardWriteResult,
   "info_card.edit": formatInfoCardWriteResult,
@@ -819,6 +820,114 @@ function formatStats(
   return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
 }
 
+/**
+ * Admin usage view: LLM costs/tokens, per-tenant cost breakdown, and option execution stats.
+ * Uses stats_grid for aggregate metrics, data_table for per-tenant AI + allocated cost,
+ * and data_table for per-option execution breakdown.
+ */
+function formatAdminUsageView(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const widgets: FormattedResponse["widgets"] = [];
+  const usageResult = sqlResults.find((r) => r.templateName === "usage_by_tenant");
+  const summaryResult = sqlResults.find((r) => r.templateName === "usage_by_tenant_summary");
+  const allocResult = sqlResults.find((r) => r.templateName === "operational_cost_allocation");
+  const execResult = sqlResults.find((r) => r.templateName === "option_execution_stats");
+
+  if (usageResult && usageResult.rows.length > 0) {
+    const rows = usageResult.rows;
+    const totalCost = rows.reduce((s, r) => s + (Number(r.total_cost) || 0), 0);
+    const totalCalls = rows.reduce((s, r) => s + (Number(r.call_count) || 0), 0);
+    const totalInput = rows.reduce((s, r) => s + (Number(r.total_input_tokens) || 0), 0);
+    const totalOutput = rows.reduce((s, r) => s + (Number(r.total_output_tokens) || 0), 0);
+    widgets.push({
+      type: "stats_grid",
+      data: {
+        stats: [
+          { label: "Total Cost", value: `$${totalCost.toFixed(4)}` },
+          { label: "LLM Calls", value: String(totalCalls) },
+          { label: "Input Tokens", value: String(totalInput) },
+          { label: "Output Tokens", value: String(totalOutput) },
+        ],
+      },
+    });
+  }
+
+  if (summaryResult && summaryResult.rows.length > 0) {
+    const rows = summaryResult.rows;
+    const allocRow = allocResult?.rows?.[0];
+    const totalOpCost = Number(allocRow?.total_operational_cost ?? 0) || 0;
+    const tenantCount = Number(allocRow?.tenant_count ?? 0) || 1;
+    const allocatedPerTenant = tenantCount > 0 ? totalOpCost / tenantCount : 0;
+
+    widgets.push({
+      type: "data_table",
+      data: {
+        headers: ["Tenant", "AI Cost", "Allocated Cost", "Total Cost", "LLM Calls"],
+        rows: rows.map((r) => {
+          const aiCost = Number(r.ai_cost ?? 0) || 0;
+          const totalCost = aiCost + allocatedPerTenant;
+          return [
+            String(r.tenant_name ?? r.tenant_id ?? ""),
+            `$${aiCost.toFixed(4)}`,
+            `$${allocatedPerTenant.toFixed(4)}`,
+            `$${totalCost.toFixed(4)}`,
+            String(r.llm_calls ?? 0),
+          ];
+        }),
+      },
+    });
+    if (totalOpCost > 0) {
+      widgets.push({
+        type: "text_response",
+        data: {
+          text: "Operational costs (AWS, Supabase, etc.) are split equally across tenants.",
+        },
+      });
+    }
+  }
+
+  if (execResult && execResult.rows.length > 0) {
+    const rows = execResult.rows;
+    const totalExec = rows.reduce((s, r) => s + (Number(r.execution_count) || 0), 0);
+    const totalErrors = rows.reduce((s, r) => s + (Number(r.error_count) || 0), 0);
+    const avgLatency = rows.length > 0
+      ? rows.reduce((s, r) => s + (Number(r.avg_ms) || 0), 0) / rows.length
+      : 0;
+    widgets.push({
+      type: "stats_grid",
+      data: {
+        stats: [
+          { label: "Total Executions", value: String(totalExec) },
+          { label: "Avg Latency (ms)", value: avgLatency.toFixed(0) },
+          { label: "Total Errors", value: String(totalErrors) },
+        ],
+      },
+    });
+    widgets.push({
+      type: "data_table",
+      data: {
+        headers: ["Option", "Executions", "Avg Latency (ms)", "Errors", "LLM Calls", "Cost"],
+        rows: rows.map((r) => [
+          String(r.option_name ?? r.option_id ?? ""),
+          String(r.execution_count ?? 0),
+          typeof r.avg_ms === "number" ? r.avg_ms.toFixed(0) : String(r.avg_ms ?? 0),
+          String(r.error_count ?? 0),
+          String(r.llm_call_count ?? 0),
+          typeof r.llm_total_cost === "number" ? `$${r.llm_total_cost.toFixed(4)}` : `$${Number(r.llm_total_cost ?? 0).toFixed(4)}`,
+        ]),
+      },
+    });
+  }
+
+  const summary = widgets.length > 0
+    ? "Usage and option execution statistics for the selected period."
+    : "No usage data for the selected period.";
+
+  return { summary, widgets, followUpOptionIds: option.follow_up_option_ids };
+}
+
 function formatAddNote(
   sqlResults: SqlResult[],
   option: OptionDefinition
@@ -1566,6 +1675,14 @@ function formatAdminTraceLookup(
       const rec = r as Record<string, unknown>;
       return `**${rec.timestamp ?? ""}** [${rec.level ?? ""}] ${rec.service ?? ""}: ${rec.message ?? ""}`;
     });
+    // Sort by timestamp descending (most recent first)
+    const sortedRows = [...rows].sort((a, b) => {
+      const ta = (a as Record<string, unknown>).timestamp as string | undefined;
+      const tb = (b as Record<string, unknown>).timestamp as string | undefined;
+      if (!ta) return 1;
+      if (!tb) return -1;
+      return tb.localeCompare(ta);
+    });
     return {
       summary: `Found ${rows.length} log entries for trace \`${traceId}\`.`,
       widgets: [
@@ -1573,13 +1690,17 @@ function formatAdminTraceLookup(
         {
           type: "data_list",
           data: {
-            items: rows,
+            items: sortedRows,
             columns: [
-              { key: "timestamp", label: "Time" },
+              { key: "timestamp", label: "Time", format: "datetime" as const },
               { key: "level", label: "Level" },
               { key: "service", label: "Service" },
               { key: "message", label: "Message" },
+              { key: "durationMs", label: "Duration (ms)" },
+              { key: "data", label: "Data" },
             ],
+            _noItemActions: true,
+            _noPin: true,
           },
         },
       ],

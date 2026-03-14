@@ -44,6 +44,7 @@ export interface QAResult {
     inlineWidget: string | null;
     widgetConfig: Record<string, unknown>;
     isRequired?: boolean;
+    paramSchema?: Record<string, unknown>;
   }[];
   collectedParams?: Record<string, unknown>;
 }

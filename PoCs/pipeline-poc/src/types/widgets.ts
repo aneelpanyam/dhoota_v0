@@ -87,6 +87,7 @@ export interface QuestionCardData {
   widgetConfig: Record<string, unknown>;
   optionId: string;
   sessionParams: Record<string, unknown>;
+  paramSchema?: Record<string, unknown>;
 }
 
 export interface DefaultOptionsMenuData {
