@@ -10,6 +10,7 @@ const SOURCE_QUERIES: Record<
     valueField: string;
     labelField: string;
     tenantScoped?: boolean;
+    tenantParam?: string;
     filters?: Record<string, unknown>;
   }
 > = {
@@ -25,6 +26,15 @@ const SOURCE_QUERIES: Record<
     valueField: "id",
     labelField: "display_name",
     filters: { deleted_at: null },
+  },
+  tenant_users: {
+    table: "users",
+    select: "id, display_name, email",
+    valueField: "id",
+    labelField: "display_name",
+    tenantScoped: true,
+    filters: { deleted_at: null },
+    tenantParam: "tenantId",
   },
   citizen_groups: {
     table: "citizen_groups",
@@ -55,6 +65,14 @@ const SOURCE_QUERIES: Record<
     labelField: "name",
     tenantScoped: true,
   },
+  tags: {
+    table: "tags",
+    select: "id, name, color",
+    valueField: "name",
+    labelField: "name",
+    tenantScoped: true,
+    filters: { is_hidden: false },
+  },
 };
 
 export async function GET(request: NextRequest) {
@@ -75,10 +93,17 @@ export async function GET(request: NextRequest) {
     const config = SOURCE_QUERIES[source];
     const db = createServiceSupabase();
 
+    const tenantIdParam = config.tenantParam
+      ? request.nextUrl.searchParams.get(config.tenantParam)
+      : null;
+    const effectiveTenantId = tenantIdParam ?? session?.tenantId ?? null;
+
     let query = db.from(config.table).select(config.select);
 
-    if (config.tenantScoped && session.tenantId) {
-      query = query.eq("tenant_id", session.tenantId);
+    if (source === "tags" && effectiveTenantId) {
+      query = query.or(`tenant_id.eq.${effectiveTenantId},tenant_id.is.null`);
+    } else if (config.tenantScoped && effectiveTenantId) {
+      query = query.eq("tenant_id", effectiveTenantId);
     }
     if (config.filters) {
       for (const [key, val] of Object.entries(config.filters)) {

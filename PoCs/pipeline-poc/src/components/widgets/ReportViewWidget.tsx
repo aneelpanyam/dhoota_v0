@@ -4,32 +4,11 @@ import { useRef, useCallback } from "react";
 import type { Widget, WidgetAction } from "@/types/api";
 import ReactMarkdown from "react-markdown";
 import { Download } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
 
-const COLORS = [
-  "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
-  "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6366F1",
-];
-
-interface ChartData {
-  chartType: string;
+interface DataItemSection {
   title: string;
-  labels: string[];
-  datasets: { label: string; data: number[] }[];
+  items: Record<string, unknown>[];
+  columns: { key: string; label: string }[];
 }
 
 interface Props {
@@ -43,7 +22,7 @@ interface Props {
 
 export function ReportViewWidget({ widget }: Props) {
   const d = widget.data;
-  const charts = (d.charts ?? []) as ChartData[];
+  const dataItems = (d.dataItems ?? []) as DataItemSection[];
   const insights = (d.insights as string) ?? "";
   const filterId = d.filterId as string | undefined;
   const reportRef = useRef<HTMLDivElement>(null);
@@ -89,74 +68,39 @@ export function ReportViewWidget({ widget }: Props) {
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       <div ref={reportRef} className="p-4 space-y-6">
-        {charts.map((chart, i) => {
-          const chartData = chart.labels.map((label, idx) => {
-            const point: Record<string, unknown> = { name: label };
-            chart.datasets.forEach((ds) => {
-              point[ds.label] = ds.data[idx];
-            });
-            return point;
-          });
-
-          return (
-            <div key={i} className="rounded-lg border bg-muted/30 p-4">
-              {chart.title && <h4 className="font-semibold text-sm mb-3">{chart.title}</h4>}
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  {chart.chartType === "bar" ? (
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      {chart.datasets.map((ds, di) => (
-                        <Bar key={ds.label} dataKey={ds.label} fill={COLORS[di % COLORS.length]} radius={[4, 4, 0, 0]} />
+        {dataItems.map((section, i) => (
+          <div key={i} className="rounded-lg border bg-muted/30 p-4">
+            {section.title && <h4 className="font-semibold text-sm mb-3">{section.title}</h4>}
+            {section.items.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      {section.columns.map((col) => (
+                        <th key={col.key} className="text-left py-2 px-2 font-medium">
+                          {col.label}
+                        </th>
                       ))}
-                    </BarChart>
-                  ) : chart.chartType === "line" ? (
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      {chart.datasets.map((ds, di) => (
-                        <Line key={ds.label} type="monotone" dataKey={ds.label} stroke={COLORS[di % COLORS.length]} strokeWidth={2} />
-                      ))}
-                    </LineChart>
-                  ) : chart.chartType === "pie" || chart.chartType === "donut" ? (
-                    <PieChart>
-                      <Pie
-                        data={chartData.map((d, idx) => ({ ...d, value: chart.datasets[0]?.data[idx] ?? 0 }))}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={chart.chartType === "donut" ? 60 : 0}
-                        outerRadius={80}
-                        dataKey="value"
-                        nameKey="name"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {chartData.map((_, i) => (
-                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {section.items.map((row, ri) => (
+                      <tr key={ri} className="border-b last:border-0">
+                        {section.columns.map((col) => (
+                          <td key={col.key} className="py-2 px-2">
+                            {String(row[col.key] ?? "")}
+                          </td>
                         ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  ) : (
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey={chart.datasets[0]?.label ?? "value"} fill={COLORS[0]} />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          );
-        })}
+            ) : (
+              <p className="text-sm text-muted-foreground">No data</p>
+            )}
+          </div>
+        ))}
 
         {insights && (
           <div className="prose prose-sm max-w-none">

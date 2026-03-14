@@ -11,7 +11,7 @@ import {
   UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
   ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
   Smartphone, Zap, Clock, BarChart3, Bookmark, ExternalLink,
-  MoreVertical,
+  MoreVertical, Tags, Share2,
 } from "lucide-react";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
@@ -35,7 +35,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   PlusCircle, MinusCircle, Trash2, CalendarDays, CalendarPlus,
   UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
   ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
-  Smartphone, Zap, Calendar, Pin,
+  Smartphone, Zap, Calendar, Pin, Tags, Share2,
 };
 
 const statusColors: Record<string, string> = {

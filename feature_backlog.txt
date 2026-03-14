@@ -1,0 +1,17 @@
+Here are some new features we need to plan for:
+
+* Instead of showing "thinking..." for everything, let's show contextual messaging based on the chosen option - so we can have this configurable at option level
+* Add prompt injection guard rails for every AI interaction
+* Add parameter validation for every QASession or for every pipeline execution
+* Welcome message for public site should support markdown and should show as content in the chat rather than as the banner we have today
+* For reporting, let's take out graphs. Let's just support data widgets (like the one we have for stats).
+* For reporting, every report page should have it's own insights - unlike the current one where it has one common insights for all pages.
+* Report insights should be rich markdown format 
+* have an admin option to see log messages for a trace id - integrate with cloud watch and this option pipeline is different than the current pipeline we have - we need to make sure this is implemented as a pluggable and extensible design rather than hacky implementation
+* Make the public website title configurable at tenant level - add options for both admin user type and tenant user type to manage this for the tenant - for tenant user they can manage only for their tenant
+* Provide option to tenant user and also admin user to manage the welcome messages for their public website
+* Implement session timeout
+* Provide option to generate social media posts for an activity or set of activities - it is similar to reports or contextual insights, just that it should be aware about the social media context and should probably show the image(s) they can use for the post (re-use from the activity media)  
+ * Ensure tagging is working well - currently it isn't I think - edit activity doesn't have question for tag management, same for create activity also. and like how we have add notes or add media option, it doesn't have option to manage tag - we should considering notes, media, tags, bookmarking as "manage" options on an activity
+* Option to show information cards to the tenant user by the admin
+* Option to send notices to the tenant user by admin. and to public user by tenant user

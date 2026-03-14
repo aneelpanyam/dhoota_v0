@@ -4,7 +4,9 @@ import { generateId } from "@/lib/utils";
 import { resolveOption } from "./resolver";
 import { startQASession, continueQASession } from "./qa-engine";
 import { refineInput } from "./refiner";
-import { executeSqlTemplates, consumeSqlDebug } from "./executor";
+import { consumeSqlDebug } from "./executor";
+import { getHandler } from "./handlers";
+import type { OptionDefinition } from "@/types/options";
 import { formatResponse } from "./formatter";
 import { optionsToReferences } from "./context";
 import { loadSqlTemplates } from "./loader";
@@ -15,6 +17,7 @@ import { PipelineTrace } from "./trace";
 import { logger } from "@/lib/logging/logger";
 import { handleInsightsQuery, handleReportQuery } from "./insights";
 import { setLlmLogContext, clearLlmLogContext } from "@/lib/llm/cost";
+import { validateParams } from "./validator";
 
 export async function processMessage(
   request: SendMessageRequest,
@@ -100,6 +103,12 @@ export async function processMessage(
 
     if (qaResult.status === "need_more" && qaResult.nextQuestions) {
       const entityCtx = await fetchEntityContext(resolved.extractedParams ?? {}, context.tenantId);
+      const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
+        qaResult.nextQuestions,
+        resolved.option!.id,
+        resolved.extractedParams ?? {},
+        context.tenantId
+      );
 
       const widgets: Widget[] = [];
       if (entityCtx) {
@@ -115,7 +124,7 @@ export async function processMessage(
         type: "question_stepper" as WidgetType,
         data: {
           optionId: resolved.option!.id,
-          questions: qaResult.nextQuestions,
+          questions: enrichedQuestions,
           sessionParams: resolved.extractedParams ?? {},
           entityContext: entityCtx,
         },
@@ -213,9 +222,23 @@ export async function processMessage(
       resolved.extractedParams = confirmParams;
     }
 
+    const validation = validateParams(
+      resolved.extractedParams ?? {},
+      resolved.option!.input_schema
+    );
+    if (!validation.valid) {
+      const result = buildErrorResponse(
+        validation.errors?.join(" ") ?? "Invalid parameters.",
+        context,
+        defaultOpts
+      );
+      result.debugTrace = trace.toJSON();
+      return result;
+    }
+
     const sqlResults = await trace.step(
       "execute_sql",
-      () => executeSqlTemplates(resolved.option!.id, resolved.extractedParams ?? {}, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
+      () => executeWithHandler(resolved.option!, resolved.extractedParams ?? {}, context),
       { optionId: resolved.option.id, params: resolved.extractedParams }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
@@ -322,13 +345,19 @@ async function handleQAResponse(
   if (qaResult.status === "need_more" && qaResult.nextQuestions) {
     const collectedSoFar = qaResult.collectedParams ?? previousParams;
     const entityCtx = await fetchEntityContext(collectedSoFar, context.tenantId);
+    const enrichedQuestions = await enrichTagQuestionsWithPrefetch(
+      qaResult.nextQuestions,
+      option.id,
+      collectedSoFar,
+      context.tenantId
+    );
 
     const widgets: Widget[] = [{
       id: generateId(),
       type: "question_stepper" as WidgetType,
       data: {
         optionId: option.id,
-        questions: qaResult.nextQuestions,
+        questions: enrichedQuestions,
         sessionParams: collectedSoFar,
         entityContext: entityCtx,
       },
@@ -348,10 +377,19 @@ async function handleQAResponse(
   const hasWrites = option.has_writes ?? (await loadSqlTemplates(option.id)).some((t) => t.query_type === "write");
   const collectedParams = qaResult.collectedParams ?? {};
 
+  const validation = validateParams(collectedParams, option.input_schema);
+  if (!validation.valid) {
+    return buildErrorResponse(
+      validation.errors?.join(" ") ?? "Invalid parameters.",
+      context,
+      defaultOpts
+    );
+  }
+
   if (!hasWrites) {
     const sqlResults = await trace.step(
       "execute_sql",
-      () => executeSqlTemplates(option.id, collectedParams, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
+      () => executeWithHandler(option, collectedParams, context),
       { optionId: option.id, params: collectedParams }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
@@ -486,9 +524,18 @@ async function handleConfirmation(
 
   const params = request.params ?? {};
 
+  const validation = validateParams(params, option.input_schema);
+  if (!validation.valid) {
+    return buildErrorResponse(
+      validation.errors?.join(" ") ?? "Invalid parameters.",
+      context,
+      defaultOpts
+    );
+  }
+
   const sqlResults = await trace.step(
     "execute_sql",
-    () => executeSqlTemplates(option.id, params, { tenantId: context.tenantId, userId: context.userId, scopedUserId: context.scopedUserId }, context.userType),
+    () => executeWithHandler(option, params, context),
     { optionId: option.id, paramKeys: Object.keys(params) }
   );
   trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
@@ -661,6 +708,24 @@ function extractResourceIdFromParams(
   return undefined;
 }
 
+async function executeWithHandler(
+  option: OptionDefinition,
+  params: Record<string, unknown>,
+  context: UserContext
+): Promise<import("@/types/pipeline").SqlResult[]> {
+  const handlerId = option.handler_id ?? "sql";
+  const handler = getHandler(handlerId);
+  if (!handler) {
+    throw new Error(`Unknown pipeline handler: ${handlerId}`);
+  }
+  return handler.execute(option.id, params, {
+    tenantId: context.tenantId,
+    userId: context.userId,
+    scopedUserId: context.scopedUserId,
+    userType: context.userType,
+  });
+}
+
 function isChildOption(optionId: string): boolean {
   return /\.(view|edit|delete|add_|remove_|respond|assign|revoke|regenerate|provision|create|manage|configure|process|list)/.test(optionId);
 }
@@ -681,6 +746,7 @@ function buildFollowUps(
         optionId: opt!.id,
         name: opt!.name,
         icon: opt!.icon ?? "Zap",
+        loadingMessage: opt!.loading_message ?? undefined,
       };
       if (resourceId && paramKey) {
         ref.params = { [paramKey]: resourceId };
@@ -854,6 +920,55 @@ interface EntityContext {
   entityId: string;
   title: string;
   subtitle?: string;
+}
+
+async function fetchActivityTagNames(
+  activityId: string,
+  _tenantId: string
+): Promise<string[]> {
+  try {
+    const db = createServiceSupabase();
+    const { data: atData } = await db
+      .from("activity_tags")
+      .select("tag_id")
+      .eq("activity_id", activityId);
+    const tagIds = (atData ?? []).map((r: { tag_id: string }) => r.tag_id);
+    if (tagIds.length === 0) return [];
+    const { data: tagData } = await db.from("tags").select("name").in("id", tagIds);
+    return (tagData ?? []).map((r: { name: string }) => r.name);
+  } catch {
+    return [];
+  }
+}
+
+interface QuestionData {
+  questionText: string;
+  questionKey: string;
+  inlineWidget?: string | null;
+  widgetConfig?: Record<string, unknown>;
+  isRequired?: boolean;
+}
+
+async function enrichTagQuestionsWithPrefetch(
+  questions: QuestionData[],
+  optionId: string,
+  params: Record<string, unknown>,
+  tenantId: string
+): Promise<QuestionData[]> {
+  const activityId = params.activity_id as string | undefined;
+  if (!activityId || !["activity.manage_tags", "activity.edit"].includes(optionId)) {
+    return questions;
+  }
+  const tagNames = await fetchActivityTagNames(activityId, tenantId);
+  if (tagNames.length === 0) return questions;
+
+  return questions.map((q) => {
+    if (q.questionKey !== "tags" || q.inlineWidget !== "tag_select") return q;
+    return {
+      ...q,
+      widgetConfig: { ...(q.widgetConfig ?? {}), defaultTags: tagNames },
+    };
+  });
 }
 
 async function fetchEntityContext(

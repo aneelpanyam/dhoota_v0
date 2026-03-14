@@ -9,21 +9,21 @@ import { logger } from "@/lib/logging/logger";
 import { runFilterAndGetContextItems, type InsightContextItem } from "./context-filters";
 import { loadReportDefinitions } from "./loader";
 import { executeReportTemplates } from "./report-executor";
+import { sanitizeUserInput, checkInput } from "@/lib/llm/guardrails";
 
 export type { InsightContextItem };
 
-function reportRowsToChartData(
+function reportRowsToDataItems(
   rows: Record<string, unknown>[],
-  labelColumn: string | null,
-  valueColumns: string[]
-): { labels: string[]; datasets: { label: string; data: number[] }[] } {
-  const labelKey = labelColumn ?? "name";
-  const labels = rows.map((r) => String(r[labelKey] ?? ""));
-  const datasets = valueColumns.map((col) => ({
-    label: col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    data: rows.map((r) => Number(r[col] ?? 0)),
+  title: string
+): { title: string; items: Record<string, unknown>[]; columns: { key: string; label: string }[] } {
+  if (rows.length === 0) return { title, items: [], columns: [] };
+  const keys = Object.keys(rows[0] ?? {});
+  const columns = keys.map((k) => ({
+    key: k,
+    label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
   }));
-  return { labels, datasets };
+  return { title, items: rows, columns };
 }
 
 export async function handleInsightsQuery(
@@ -96,15 +96,33 @@ Answer the user's question based on this context. Be specific, reference the ite
 
 IMPORTANT: The user selects from predefined filters—they cannot change what data is included. If the context does not contain the information needed to answer the question, briefly state that the available data does not include that information. Do NOT suggest metrics to collect, timeframes to add, or how to improve the query. Do NOT give guidance about what data would be needed.`;
 
+  const check = checkInput(question);
+  if (!check.ok) {
+    return {
+      messageId: generateId(),
+      conversationId: context.conversationId,
+      widgets: [{
+        id: generateId(),
+        type: "error_card" as WidgetType,
+        data: { message: check.error, retryable: false },
+        bookmarkable: false,
+      }],
+      followUps: [],
+      defaultOptions: defaultOpts,
+      conversationState: "active",
+    };
+  }
+  const sanitizedQuestion = sanitizeUserInput(question) || question;
+
   try {
     const llm = getLLMProvider();
     const response = await trace.step(
       "insights_llm_call",
       async () => {
-        const result = await llm.chat(systemPrompt, question);
+        const result = await llm.chat(systemPrompt, sanitizedQuestion);
         return result;
       },
-      { contextItemCount: contextItems.length, question: question.slice(0, 100) }
+      { contextItemCount: contextItems.length, question: sanitizedQuestion.slice(0, 100) }
     );
     trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
 
@@ -156,6 +174,7 @@ export async function handleReportQuery(
   defaultOpts: ReturnType<typeof optionsToReferences>,
   trace: PipelineTrace
 ): Promise<ChatMessageResponse> {
+  // filterId scopes report to a specific page; each filter has its own report definition and context
   const filterId = request.params?.filterId as string | undefined;
   const question = (request.content as string) || "Summarize the key insights and trends from this report data.";
 
@@ -198,53 +217,62 @@ export async function handleReportQuery(
       };
     }
 
-    const chartResults = await trace.step(
+    const reportResults = await trace.step(
       "execute_report_templates",
       () => executeReportTemplates(report.id, { tenantId: context.tenantId, userId: context.userId })
     );
 
-    const charts = chartResults.map((c) => {
-      const { labels, datasets } = reportRowsToChartData(
-        c.rows,
-        c.labelColumn,
-        c.valueColumns.length > 0 ? c.valueColumns : ["count"]
-      );
-      return {
-        chartType: c.chartType,
-        title: c.chartTitle,
-        labels,
-        datasets,
-      };
-    });
+    const dataItems = reportResults.map((c) =>
+      reportRowsToDataItems(c.rows, c.chartTitle)
+    );
 
     const contextBlock = contextItems.map((item, i) =>
       `[${i + 1}] ${item.entityType}: "${item.label}"\n${item.summary}`
     ).join("\n\n");
 
-    const chartSummary = chartResults.map((c) => {
+    const dataSummary = reportResults.map((c) => {
       const topRows = c.rows.slice(0, 5);
       const lines = topRows.map((r) => {
-        const label = c.labelColumn ? String(r[c.labelColumn] ?? "") : "";
-        const val = c.valueColumns[0] ? String(r[c.valueColumns[0]] ?? "") : "";
+        const keys = Object.keys(r);
+        const label = keys[0] ? String(r[keys[0]] ?? "") : "";
+        const val = keys[1] ? String(r[keys[1]] ?? "") : "";
         return `${label}: ${val}`;
       });
       return `**${c.chartTitle}**: ${lines.join("; ")}`;
     }).join("\n\n");
 
-    const systemPrompt = `You are an analytical assistant. The user is asking about a report with ${contextItems.length} item(s) and ${charts.length} chart(s).
+    const systemPrompt = `You are an analytical assistant. The user is asking about a report with ${contextItems.length} item(s) and ${dataItems.length} data section(s).
 
 Context data:
 ${contextBlock}
 
-Chart summaries:
-${chartSummary}
+Data summaries:
+${dataSummary}
 
 Answer the user's question based on this data. Be specific and provide actionable insights. Use markdown formatting.`;
+
+    const reportCheck = checkInput(question);
+    if (!reportCheck.ok) {
+      return {
+        messageId: generateId(),
+        conversationId: context.conversationId,
+        widgets: [{
+          id: generateId(),
+          type: "error_card" as WidgetType,
+          data: { message: reportCheck.error, retryable: false },
+          bookmarkable: false,
+        }],
+        followUps: [],
+        defaultOptions: defaultOpts,
+        conversationState: "active",
+      };
+    }
+    const sanitizedReportQuestion = sanitizeUserInput(question) || question;
 
     const llm = getLLMProvider();
     const insights = await trace.step(
       "report_insights_llm",
-      () => llm.chat(systemPrompt, question)
+      () => llm.chat(systemPrompt, sanitizedReportQuestion)
     );
     trace.enrichLastStep({ llm: consumeLlmDebug() ?? undefined });
 
@@ -252,7 +280,7 @@ Answer the user's question based on this data. Be specific and provide actionabl
       id: generateId(),
       type: "report_view" as WidgetType,
       data: {
-        charts,
+        dataItems,
         insights,
         filterId,
       },

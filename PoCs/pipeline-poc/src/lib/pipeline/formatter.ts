@@ -17,6 +17,8 @@ const SPECIALIZED_FORMATTERS: Record<
   "activity.delete": formatActivityDelete,
   "activity.add_note": formatAddNote,
   "activity.add_media": formatAddMedia,
+  "activity.manage_tags": formatActivityManageTags,
+  "activity.social_post": formatActivitySocialPost,
   "view.stats": formatStats,
   "public.stats": formatStats,
   "tag.manage": formatTagList,
@@ -657,6 +659,49 @@ function formatAddNote(
       type: "text_response",
       data: { text: `**Note added** ${dateStr ? `on ${dateStr}` : ""}\n\n> ${content}` },
     }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatActivityManageTags(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const activity = sqlResults[0]?.rows[0];
+  const title = (activity?.title as string) ?? "Activity";
+  return {
+    summary: `Tags updated for "${title}".`,
+    widgets: [{
+      type: "text_response",
+      data: { text: `Successfully updated tags for **${title}**.` },
+    }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatActivitySocialPost(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const result = sqlResults.find((r) => r.templateName === "social_post");
+  const row = result?.rows[0] as Record<string, unknown> | undefined;
+  if (!row || row.error) {
+    return {
+      summary: String(row?.error ?? "Failed to generate post."),
+      widgets: [{ type: "text_response", data: { text: String(row?.error ?? "Failed to generate post.") } }],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+  const postText = row.post_text as string;
+  const platform = row.platform as string;
+  const images = (row.images as Array<{ s3_key: string; caption: string }>) ?? [];
+  let text = `### ${platform} Post\n\n${postText}`;
+  if (images.length > 0) {
+    text += `\n\n**Suggested images** (${images.length}): ${images.map((i) => i.caption || i.s3_key?.slice(-12) || "image").join(", ")}`;
+  }
+  return {
+    summary: `Social post generated for ${platform}.`,
+    widgets: [{ type: "text_response", data: { text } }],
     followUpOptionIds: option.follow_up_option_ids,
   };
 }
@@ -1315,8 +1360,46 @@ function formatAdminConversationView(
 
 function formatAdminTraceLookup(
   sqlResults: SqlResult[],
-  option: OptionDefinition
+  option: OptionDefinition,
+  params?: Record<string, unknown>
 ): FormattedResponse {
+  const traceLogsResult = sqlResults.find((r) => r.templateName === "trace_logs");
+  if (traceLogsResult) {
+    const rows = traceLogsResult.rows;
+    const errorRow = rows[0] as Record<string, unknown> | undefined;
+    if (errorRow?.error) {
+      return {
+        summary: String(errorRow.error),
+        widgets: [{ type: "text_response", data: { text: String(errorRow.error) } }],
+        followUpOptionIds: option.follow_up_option_ids,
+      };
+    }
+    const traceId = (params?.trace_id as string) ?? "";
+    const logLines = rows.map((r) => {
+      const rec = r as Record<string, unknown>;
+      return `**${rec.timestamp ?? ""}** [${rec.level ?? ""}] ${rec.service ?? ""}: ${rec.message ?? ""}`;
+    });
+    return {
+      summary: `Found ${rows.length} log entries for trace \`${traceId}\`.`,
+      widgets: [
+        { type: "text_response", data: { text: `### Trace: \`${traceId}\`\n\n${rows.length} log entries from CloudWatch.` } },
+        {
+          type: "data_list",
+          data: {
+            items: rows,
+            columns: [
+              { key: "timestamp", label: "Time" },
+              { key: "level", label: "Level" },
+              { key: "service", label: "Service" },
+              { key: "message", label: "Message" },
+            ],
+          },
+        },
+      ],
+      followUpOptionIds: option.follow_up_option_ids,
+    };
+  }
+
   const traceResult = sqlResults.find((r) => r.templateName === "lookup_trace");
   const msg = traceResult?.rows[0];
 

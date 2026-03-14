@@ -31,6 +31,7 @@ export interface OptionReference {
   icon: string;
   description?: string;
   params?: Record<string, unknown>;
+  loadingMessage?: string | null;
 }
 
 export interface WidgetAction {

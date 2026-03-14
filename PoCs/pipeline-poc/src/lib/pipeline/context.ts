@@ -174,5 +174,6 @@ export function optionsToReferences(options: OptionDefinition[]) {
       name: opt.name,
       icon: opt.icon ?? "Zap",
       description: opt.description,
+      loadingMessage: opt.loading_message ?? undefined,
     }));
 }

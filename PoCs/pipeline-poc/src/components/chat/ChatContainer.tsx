@@ -1,19 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useChat } from "@/lib/hooks/use-chat";
+import { useSessionTimeout } from "@/lib/hooks/use-session-timeout";
+import { createBrowserSupabase } from "@/lib/supabase/client";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { DebugPanel } from "./DebugPanel";
-import { WelcomeBanner } from "./WelcomeBanner";
 import { SidePanel } from "./SidePanel";
 import { Loader2, Info } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
 
 export function ChatContainer() {
+  const router = useRouter();
   const chat = useChat();
   const initialized = useRef(false);
+
   const [sessionContext, setSessionContext] = useState<{
     publicMode: boolean;
     publicSiteConfig?: {
@@ -21,6 +25,7 @@ export function ChatContainer() {
       sidePanelContent: unknown;
       themeOverrides: unknown;
       enabledOptionIds: string[];
+      siteTitle?: string | null;
       infoCards?: { id: string; title: string; content: unknown; card_type: string; icon?: string; display_order: number }[];
     };
     conversationContext: string;
@@ -31,6 +36,18 @@ export function ChatContainer() {
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [contextFilters, setContextFilters] = useState<{ id: string; name: string }[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<{ id: string; name: string } | null>(null);
+
+  const handleSessionTimeout = useCallback(async () => {
+    const supabase = createBrowserSupabase();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }, [router]);
+
+  const isPublic = sessionContext?.publicMode ?? false;
+  const { recordActivity } = useSessionTimeout({
+    onTimeout: handleSessionTimeout,
+    enabled: !isPublic,
+  });
 
   useEffect(() => {
     if (!initialized.current) {
@@ -44,7 +61,14 @@ export function ChatContainer() {
     fetch("/api/session")
       .then((res) => res.json())
       .then(setSessionContext)
-      .catch(() => {});
+      .catch(() => {
+        setSessionContext({
+          publicMode: false,
+          conversationContext: "tracker",
+          user: null,
+          featureFlags: [],
+        });
+      });
   }, []);
 
   useEffect(() => {
@@ -62,7 +86,6 @@ export function ChatContainer() {
       });
   }, []);
 
-  const isPublic = sessionContext?.publicMode ?? false;
   const bookmarksEnabled = sessionContext?.featureFlags?.includes("bookmarks_enabled") ?? false;
 
   const handlePinToContext = useCallback((item: ContextItem) => {
@@ -89,6 +112,34 @@ export function ChatContainer() {
     setSelectedFilter(null);
   }, []);
 
+  const optionLoadingMessages = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const msg of chat.messages) {
+      const res = msg.response;
+      if (!res) continue;
+      for (const opt of res.defaultOptions ?? []) {
+        if (opt.loadingMessage) map[opt.optionId] = opt.loadingMessage;
+      }
+      for (const fu of res.followUps ?? []) {
+        if (fu.loadingMessage) map[fu.optionId] = fu.loadingMessage;
+      }
+    }
+    return map;
+  }, [chat.messages]);
+
+  const sessionLoaded = sessionContext !== null;
+
+  if (!sessionLoaded) {
+    return (
+      <div className="flex h-screen w-full bg-background items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full bg-background">
       {!isPublic && (
@@ -109,8 +160,8 @@ export function ChatContainer() {
           }`}
         >
           <h1 className="text-lg font-semibold">
-            {isPublic && sessionContext?.user?.displayName
-              ? sessionContext.user.displayName
+            {isPublic
+              ? (sessionContext?.publicSiteConfig?.siteTitle ?? sessionContext?.user?.displayName ?? "Dhoota")
               : "Dhoota"}
           </h1>
           {isPublic && (
@@ -127,16 +178,6 @@ export function ChatContainer() {
           )}
         </header>
 
-        {/* Welcome banner (public mode) */}
-        {isPublic && sessionContext?.publicSiteConfig?.welcomeMessage && (
-          <div className="px-6 pt-4 shrink-0">
-            <WelcomeBanner
-              message={sessionContext.publicSiteConfig.welcomeMessage}
-              displayName={sessionContext?.user?.displayName}
-            />
-          </div>
-        )}
-
         {/* Error banner (public mode) */}
         {isPublic && chat.error && (
           <div className="mx-6 mt-4 p-3 rounded-lg bg-destructive/15 border border-destructive/30 text-destructive text-sm shrink-0">
@@ -149,9 +190,11 @@ export function ChatContainer() {
           messages={chat.messages}
           isLoading={chat.isLoading}
           pendingRequest={chat.pendingRequest}
+          optionLoadingMessages={optionLoadingMessages}
           conversationId={chat.conversationId}
           bookmarksEnabled={bookmarksEnabled}
           onAction={(action) => {
+            recordActivity();
             if (action.optionId === "_load_conversation" && action.params?.conversationId) {
               chat.loadConversation(action.params.conversationId as string);
               return;
@@ -165,6 +208,7 @@ export function ChatContainer() {
             });
           }}
           onOptionSelect={(optionId, params) => {
+            recordActivity();
             chat.sendMessage({
               source: "default_option",
               optionId,
@@ -172,6 +216,7 @@ export function ChatContainer() {
             });
           }}
           onConfirm={(optionId, params) => {
+            recordActivity();
             chat.sendMessage({
               source: "confirmation",
               optionId,
@@ -179,6 +224,7 @@ export function ChatContainer() {
             });
           }}
           onQAResponse={(optionId, params, content) => {
+            recordActivity();
             chat.sendMessage({
               source: "qa_response",
               optionId,
@@ -193,6 +239,7 @@ export function ChatContainer() {
         {/* Input */}
         <ChatInput
           onSendReport={(filter) => {
+            recordActivity();
             chat.sendMessage({
               source: "insights",
               params: { filterId: filter.id, filterName: filter.name, reportRequest: true },
@@ -200,6 +247,7 @@ export function ChatContainer() {
             setSelectedFilter(null);
           }}
           onSend={(content, files) => {
+            recordActivity();
             chat.sendMessage({
               source: "chat",
               content,
@@ -207,6 +255,7 @@ export function ChatContainer() {
             });
           }}
           onSendInsights={(content, items, filter) => {
+            recordActivity();
             chat.sendMessage({
               source: "insights",
               content,
@@ -230,6 +279,7 @@ export function ChatContainer() {
           onClearFilter={handleClearFilter}
           onContextItemClick={(item) => {
             if (!item.viewAction) return;
+            recordActivity();
             chat.sendMessage({
               source: "inline_action",
               optionId: item.viewAction.optionId,

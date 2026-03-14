@@ -51,14 +51,20 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const [dynamicOptions, setDynamicOptions] = useState<DynamicOption[]>([]);
   const [dynamicLoading, setDynamicLoading] = useState(false);
 
+  const tagSelectSource = inlineWidget === "tag_select" ? (dynamicSource ?? "tags") : null;
   const isDynamicSelect = !!dynamicSource && (inlineWidget === "select" || !inlineWidget);
   const effectiveInlineWidget = isDynamicSelect ? "select" : inlineWidget;
 
   useEffect(() => {
-    if (!dynamicSource) return;
+    const source = dynamicSource ?? (inlineWidget === "tag_select" ? "tags" : null);
+    if (!source) return;
     let cancelled = false;
     setDynamicLoading(true);
-    fetch(`/api/options/dynamic-source?source=${encodeURIComponent(dynamicSource)}`)
+    const params = new URLSearchParams({ source });
+    if (source === "tenant_users" && sessionParams?.tenant_id) {
+      params.set("tenantId", String(sessionParams.tenant_id));
+    }
+    fetch(`/api/options/dynamic-source?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && Array.isArray(data.options)) {
@@ -68,7 +74,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setDynamicLoading(false); });
     return () => { cancelled = true; };
-  }, [dynamicSource]);
+  }, [dynamicSource, inlineWidget, sessionParams?.tenant_id]);
 
   const [value, setValue] = useState("");
   const [dateValue, setDateValue] = useState(
@@ -101,6 +107,15 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
       : []
   );
   const [listItems, setListItems] = useState<string[]>([""]);
+  const [tagSelectedValues, setTagSelectedValues] = useState<string[]>(() => {
+    const existing = sessionParams?.[questionKey];
+    if (Array.isArray(existing)) {
+      const fromParams = existing.filter((v): v is string => typeof v === "string");
+      if (fromParams.length > 0) return fromParams;
+    }
+    const defaultTags = (widgetConfig.defaultTags as string[] | undefined);
+    return Array.isArray(defaultTags) ? defaultTags : [];
+  });
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -201,6 +216,12 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         answer = filled.length > 0 ? filled : null;
         break;
       }
+      case "markdown_editor":
+        answer = value.trim() || null;
+        break;
+      case "tag_select":
+        answer = tagSelectedValues.length > 0 ? tagSelectedValues : null;
+        break;
       default:
         answer = value.trim() || null;
         break;
@@ -419,6 +440,67 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
               <Plus className="h-4 w-4" />
               {(widgetConfig.addLabel as string) ?? "Add item"}
             </button>
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : effectiveInlineWidget === "markdown_editor" ? (
+        <div className="space-y-2">
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={(widgetConfig.placeholder as string) ?? "Enter content (markdown supported)..."}
+            rows={Math.max(6, (widgetConfig.minRows as number) ?? 6)}
+            className="w-full px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono min-h-[120px] resize-y"
+          />
+          <p className="text-[11px] text-muted-foreground">Supports markdown: **bold**, *italic*, headers, lists, links</p>
+          <div className="flex justify-end">
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : effectiveInlineWidget === "tag_select" ? (
+        <div className="space-y-3">
+          {dynamicLoading ? (
+            <div className="px-3 py-2 rounded-lg border bg-muted/50 text-sm text-muted-foreground">
+              Loading tags...
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {dynamicOptions.map((opt) => {
+                const checked = tagSelectedValues.includes(opt.value);
+                return (
+                  <label
+                    key={opt.value}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition ${
+                      checked ? "bg-primary/10 border-primary/30 text-primary" : "bg-muted/30 border-transparent hover:bg-muted/50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setTagSelectedValues((prev) =>
+                          e.target.checked ? [...prev, opt.value] : prev.filter((v) => v !== opt.value)
+                        );
+                      }}
+                      className="sr-only"
+                    />
+                    <span className="text-sm">{opt.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex justify-end">
             <button
               onClick={handleSubmit}
               className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"

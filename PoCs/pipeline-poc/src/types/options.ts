@@ -23,6 +23,8 @@ export interface OptionDefinition {
   skip_refinement: boolean;
   entity_type: string | null;
   has_writes?: boolean;
+  loading_message?: string | null;
+  handler_id?: string | null;
 }
 
 export interface SqlTemplate {
@@ -47,7 +49,8 @@ export type InlineWidgetType =
   | "select"
   | "multi_select"
   | "table"
-  | "list";
+  | "list"
+  | "markdown_editor";
 
 export interface OptionQuestion {
   id: string;

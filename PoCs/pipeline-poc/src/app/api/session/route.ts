@@ -33,7 +33,7 @@ export async function GET() {
         const [configResult, cardsResult] = await Promise.all([
           db
             .from("public_site_configs")
-            .select("welcome_message, side_panel_content, theme_overrides, enabled_option_ids")
+            .select("welcome_message, side_panel_content, theme_overrides, enabled_option_ids, site_title")
             .eq("tenant_id", tenantId)
             .eq("user_id", userId)
             .single(),
@@ -56,6 +56,7 @@ export async function GET() {
             sidePanelContent: data.side_panel_content,
             themeOverrides: data.theme_overrides,
             enabledOptionIds: data.enabled_option_ids,
+            siteTitle: data.site_title ?? null,
             infoCards,
           };
         }

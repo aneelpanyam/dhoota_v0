@@ -18,6 +18,8 @@ import {
   Pin,
   ChevronDown,
   MoreHorizontal,
+  Tags,
+  Share2,
 } from "lucide-react";
 import type { ContextItem } from "@/components/chat/ContextStrip";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
@@ -34,7 +36,7 @@ interface Props {
 }
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  Eye, Pencil, MessageSquare, Trash2, Image: ImageIcon,
+  Eye, Pencil, MessageSquare, Trash2, Image: ImageIcon, Tags, Share2,
 };
 
 const visibilityIcons: Record<string, React.ComponentType<{ className?: string }>> = {

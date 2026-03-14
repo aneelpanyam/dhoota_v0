@@ -11,6 +11,7 @@ interface MessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
   pendingRequest?: PendingRequest | null;
+  optionLoadingMessages?: Record<string, string>;
   conversationId?: string | null;
   bookmarksEnabled?: boolean;
   onAction: (action: WidgetAction) => void;
@@ -29,10 +30,14 @@ function getStorageKey(conversationId?: string | null): string {
   return `dhoota:hidden-msgs:${conversationId ?? "default"}`;
 }
 
-function getLoadingMessage(pendingRequest?: PendingRequest | null): string {
+function getLoadingMessage(
+  pendingRequest?: PendingRequest | null,
+  optionLoadingMessages?: Record<string, string>
+): string {
   if (!pendingRequest) return "Thinking...";
   if (pendingRequest.source === "insights") return "Loading insights...";
   const optId = pendingRequest.optionId ?? "";
+  if (optionLoadingMessages?.[optId]) return optionLoadingMessages[optId];
   if (/\b(create|edit|add|delete|remove)\b/.test(optId)) return "Preparing confirmation...";
   return "Loading...";
 }
@@ -41,6 +46,7 @@ export function MessageList({
   messages,
   isLoading,
   pendingRequest,
+  optionLoadingMessages,
   conversationId,
   bookmarksEnabled,
   onAction,
@@ -208,7 +214,7 @@ export function MessageList({
               <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
               <span className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" />
             </div>
-            <span>{getLoadingMessage(pendingRequest)}</span>
+            <span>{getLoadingMessage(pendingRequest, optionLoadingMessages)}</span>
           </div>
         )}
 

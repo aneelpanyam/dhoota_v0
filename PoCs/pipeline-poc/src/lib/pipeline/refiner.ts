@@ -2,6 +2,7 @@ import type { OptionDefinition } from "@/types/options";
 import type { RefinedInput } from "@/types/pipeline";
 import { getLLMProvider } from "@/lib/llm/factory";
 import { loadAvailableTags } from "./loader";
+import { sanitizeUserInput } from "@/lib/llm/guardrails";
 
 export async function refineInput(
   option: OptionDefinition,
@@ -14,8 +15,9 @@ export async function refineInput(
 
   const originalMediaKeys = rawParams.media_keys;
   const sanitized = sanitizeParams(rawParams);
+  const guardrailed = applyGuardrailsToParams(sanitized);
 
-  const refined = await llm.refineInput(sanitized, schema, {
+  const refined = await llm.refineInput(guardrailed, schema, {
     tenantId,
     availableTags,
     refinementPrompt: option.refinement_prompt ?? undefined,
@@ -53,6 +55,18 @@ export async function refineInput(
   sanitizeDisplaySummary(refined.displaySummary);
 
   return refined;
+}
+
+function applyGuardrailsToParams(params: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...params };
+  const TEXT_KEYS = ["description_raw", "title", "description", "content", "edit_description"];
+  for (const key of TEXT_KEYS) {
+    const val = cleaned[key];
+    if (typeof val === "string") {
+      cleaned[key] = sanitizeUserInput(val) || val;
+    }
+  }
+  return cleaned;
 }
 
 function sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {

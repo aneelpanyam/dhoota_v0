@@ -183,6 +183,63 @@ export async function POST(request: Request) {
 
     const defaultOpts = optionsToReferences(context.defaultOptions);
 
+    // Load announcements and info cards for tenant user init
+    const [announcementsRes, infoCardsRes] = await Promise.all([
+      db
+        .from("announcements")
+        .select("id, title, content, pinned, published_at")
+        .eq("tenant_id", session.tenantId)
+        .eq("visibility", "public")
+        .is("deleted_at", null)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+        .order("pinned", { ascending: false })
+        .order("published_at", { ascending: false, nullsFirst: false })
+        .limit(5),
+      db
+        .from("info_cards")
+        .select("id, title, content, card_type, icon, display_order")
+        .eq("tenant_id", session.tenantId)
+        .eq("visibility", "public")
+        .is("deleted_at", null)
+        .order("display_order", { ascending: true })
+        .limit(10),
+    ]);
+
+    const announcements = announcementsRes.data ?? [];
+    const infoCards = infoCardsRes.data ?? [];
+
+    const initWidgets: Widget[] = [];
+
+    if (announcements.length > 0) {
+      initWidgets.push({
+        id: generateId(),
+        type: "text_response",
+        data: {
+          text: "### Announcements\n\n" + announcements
+            .map((a: { title: string; content: string; pinned?: boolean }) =>
+              (a.pinned ? "**📌 " : "") + `**${a.title}**\n\n${(a.content as string).slice(0, 500)}${(a.content as string).length > 500 ? "..." : ""}`
+            )
+            .join("\n\n---\n\n"),
+        },
+        bookmarkable: false,
+      });
+    }
+
+    if (infoCards.length > 0) {
+      for (const card of infoCards) {
+        const content = card.content as Record<string, unknown>;
+        const text = typeof content?.content_raw === "string" ? content.content_raw : (content?.text as string) ?? "";
+        initWidgets.push({
+          id: generateId(),
+          type: "text_response",
+          data: {
+            text: `### ${card.title}\n\n${text}`,
+          },
+          bookmarkable: false,
+        });
+      }
+    }
+
     const welcomeWidget: Widget = {
       id: generateId(),
       type: "text_response",
@@ -193,6 +250,8 @@ export async function POST(request: Request) {
       },
       bookmarkable: false,
     };
+
+    initWidgets.push(welcomeWidget);
 
     const defaultMenuWidget: Widget = {
       id: generateId(),
@@ -207,7 +266,7 @@ export async function POST(request: Request) {
     const welcomeMessage: ChatMessageResponse = {
       messageId: generateId(),
       conversationId,
-      widgets: [welcomeWidget],
+      widgets: initWidgets,
       followUps: [],
       defaultOptions: defaultOpts,
       conversationState: "active",
@@ -224,16 +283,20 @@ export async function POST(request: Request) {
 
     // Save init messages to DB so they persist when loading later
     const allInitMessages = [welcomeMessage, ...initResults, menuMessage];
-    const messageRows = allInitMessages.map((msg) => ({
-      id: msg.messageId,
-      conversation_id: conversationId,
-      tenant_id: session.tenantId,
-      role: "assistant",
-      content: msg.widgets.find((w) => w.type === "text_response")?.data?.text as string ?? null,
-      source: "init",
-      widgets: msg.widgets,
-      follow_ups: msg.followUps,
-    }));
+    const messageRows = allInitMessages.map((msg) => {
+      const textWidgets = msg.widgets.filter((w) => w.type === "text_response");
+      const content = (textWidgets.length > 0 ? textWidgets[textWidgets.length - 1]?.data?.text : null) as string | null;
+      return {
+        id: msg.messageId,
+        conversation_id: conversationId,
+        tenant_id: session.tenantId,
+        role: "assistant",
+        content: content ?? null,
+        source: "init",
+        widgets: msg.widgets,
+        follow_ups: msg.followUps,
+      };
+    });
 
     // Only save init messages for brand new conversations (not returning visits)
     if (!hasExistingMessages) {
