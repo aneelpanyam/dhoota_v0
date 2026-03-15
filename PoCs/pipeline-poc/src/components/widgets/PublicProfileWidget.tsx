@@ -46,7 +46,7 @@ export function PublicProfileWidget({ widget, onOptionSelect, headerActions }: P
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold text-foreground mb-2">{displayName}</h3>
+          {/*<h3 className="text-lg font-semibold text-foreground mb-2">{displayName}</h3>*/}
           <div className="text-sm text-foreground leading-relaxed prose prose-sm prose-neutral dark:prose-invert max-w-none">
             <Markdown
               components={{
