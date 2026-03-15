@@ -149,13 +149,19 @@ export function MobileBottomNav({
     );
   };
 
+  const navStyle = navStyles
+    ? ({ ...navStyles, "--nav-cell-border": navStyles.borderColor } as React.CSSProperties)
+    : undefined;
+
   return (
     <nav
       className={`fixed bottom-0 left-0 right-0 z-40 md:hidden w-full max-w-[100vw] border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)] ${navStyles ? "[&_.text-muted-foreground]:!text-inherit [&_.text-foreground]:!text-inherit" : ""}`}
       aria-label="Bottom navigation"
-      style={navStyles ?? undefined}
+      style={navStyle}
     >
-      <div className="flex items-stretch justify-around h-14 [&>*]:border-r [&>*]:border-border [&>*:last-child]:border-r-0">
+      <div
+        className={`flex items-stretch justify-around h-14 [&>*]:border-r [&>*:last-child]:border-r-0 ${navStyles?.borderColor ? "[&>*]:border-[color:var(--nav-cell-border)]" : "[&>*]:border-border"}`}
+      >
         <NavButton
           actionId="explore"
           onSelect={onExplore}

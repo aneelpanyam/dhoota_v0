@@ -81,7 +81,7 @@ export function getForegroundColor(presetId: string | null | undefined): string 
 
 /**
  * Returns inline styles for header/nav bars.
- * When fgPresetId is set and not default, use it for text color; else use bg preset's recommended textColor.
+ * When fgPresetId is set and not default, use it for text color and border color; else use bg preset's recommended textColor and backgroundColor for border.
  * When bg is default but fg is set, returns fg-only styles (no background override).
  */
 export function getPresetStyles(
@@ -90,18 +90,18 @@ export function getPresetStyles(
 ): PresetStyles | null {
   const fgColor = fgPresetId && fgPresetId !== "default" ? getForegroundColor(fgPresetId) : null;
   if (!bgPresetId || bgPresetId === "default") {
-    if (fgColor) return { color: fgColor };
+    if (fgColor) return { color: fgColor, borderColor: fgColor };
     return null;
   }
   const preset = HEADER_NAV_PRESETS.find((p) => p.id === bgPresetId);
   if (!preset || !preset.backgroundColor) {
-    if (fgColor) return { color: fgColor };
+    if (fgColor) return { color: fgColor, borderColor: fgColor };
     return null;
   }
   return {
     backgroundColor: preset.backgroundColor,
     color: fgColor ?? preset.textColor,
-    borderColor: preset.backgroundColor,
+    borderColor: fgColor ?? preset.backgroundColor,
   };
 }
 
