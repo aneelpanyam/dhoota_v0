@@ -1,8 +1,56 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { isPublicMode } from "@/lib/auth/public-mode";
+import { isCdnConfigured, getSignedCdnUrl } from "@/lib/media/cloudfront";
 import { generatePresignedReadUrl, getObjectStream } from "@/lib/media/s3";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { logger } from "@/lib/logging/logger";
+
+/** Deliver media: CDN redirect when configured, else stream or S3 presigned redirect. */
+async function deliverMedia(
+  key: string,
+  mimeType?: string
+): Promise<NextResponse> {
+  if (isCdnConfigured()) {
+    try {
+      const url = await getSignedCdnUrl(key);
+      return NextResponse.redirect(url, 302);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error("media-serve", "CloudFront signing failed, falling back to S3", { errMsg, key });
+      const url = await generatePresignedReadUrl(key);
+      return NextResponse.redirect(url, 302);
+    }
+  }
+  const stream = await getObjectStream(key);
+  if (stream) {
+    const headers: Record<string, string> = {
+      "Content-Type": (mimeType as string) ?? stream.contentType,
+      "Cache-Control": "public, max-age=3600",
+    };
+    if (stream.contentLength != null) {
+      headers["Content-Length"] = String(stream.contentLength);
+    }
+    return new NextResponse(stream.body, { status: 200, headers });
+  }
+  const url = await generatePresignedReadUrl(key);
+  return NextResponse.redirect(url, 302);
+}
+
+/** Deliver media for authenticated path: CDN redirect when configured, else S3 presigned. */
+async function deliverMediaRedirect(key: string): Promise<NextResponse> {
+  if (isCdnConfigured()) {
+    try {
+      const url = await getSignedCdnUrl(key);
+      return NextResponse.redirect(url, 302);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error("media-serve", "CloudFront signing failed, falling back to S3", { errMsg, key });
+    }
+  }
+  const url = await generatePresignedReadUrl(key);
+  return NextResponse.redirect(url, 302);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,19 +77,7 @@ export async function GET(request: NextRequest) {
           .single();
 
         if (activity) {
-          const stream = await getObjectStream(key);
-          if (stream) {
-            const headers: Record<string, string> = {
-              "Content-Type": (media.mime_type as string) ?? stream.contentType,
-              "Cache-Control": "public, max-age=3600",
-            };
-            if (stream.contentLength != null) {
-              headers["Content-Length"] = String(stream.contentLength);
-            }
-            return new NextResponse(stream.body, { status: 200, headers });
-          }
-          const url = await generatePresignedReadUrl(key);
-          return NextResponse.redirect(url, 302);
+          return deliverMedia(key, media.mime_type as string);
         }
       }
 
@@ -62,19 +98,7 @@ export async function GET(request: NextRequest) {
           .single();
 
         if (hasPublicSite) {
-          const stream = await getObjectStream(key);
-          if (stream) {
-            const headers: Record<string, string> = {
-              "Content-Type": (stream.contentType as string) ?? "image/jpeg",
-              "Cache-Control": "public, max-age=3600",
-            };
-            if (stream.contentLength != null) {
-              headers["Content-Length"] = String(stream.contentLength);
-            }
-            return new NextResponse(stream.body, { status: 200, headers });
-          }
-          const url = await generatePresignedReadUrl(key);
-          return NextResponse.redirect(url, 302);
+          return deliverMedia(key);
         }
       }
 
@@ -88,25 +112,12 @@ export async function GET(request: NextRequest) {
         .single();
 
       if (bannerRow) {
-        const stream = await getObjectStream(key);
-        if (stream) {
-          const headers: Record<string, string> = {
-            "Content-Type": (stream.contentType as string) ?? "image/jpeg",
-            "Cache-Control": "public, max-age=3600",
-          };
-          if (stream.contentLength != null) {
-            headers["Content-Length"] = String(stream.contentLength);
-          }
-          return new NextResponse(stream.body, { status: 200, headers });
-        }
-        const url = await generatePresignedReadUrl(key);
-        return NextResponse.redirect(url, 302);
+        return deliverMedia(key);
       }
     }
 
     await requireSession();
-    const url = await generatePresignedReadUrl(key);
-    return NextResponse.redirect(url, 302);
+    return deliverMediaRedirect(key);
   } catch (err) {
     if (err instanceof Error && err.message === "UNAUTHORIZED") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
