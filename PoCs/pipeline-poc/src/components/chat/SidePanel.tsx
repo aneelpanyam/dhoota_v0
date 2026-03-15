@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { getCardPresetClasses } from "@/lib/theme-presets";
 
 export interface InfoCard {
   id: string;
@@ -15,6 +16,7 @@ interface SidePanelProps {
   cards: InfoCard[];
   isOpen: boolean;
   onClose: () => void;
+  themeOverrides?: { infoCardPreset?: string; infoCardFgPreset?: string };
 }
 
 const CARD_TYPE_LABELS: Record<string, string> = {
@@ -60,7 +62,11 @@ function renderContent(content: unknown): React.ReactNode {
   return null;
 }
 
-export function SidePanel({ cards, isOpen, onClose }: SidePanelProps) {
+export function SidePanel({ cards, isOpen, onClose, themeOverrides }: SidePanelProps) {
+  const { className: infoCardClass, style: infoCardStyle } = getCardPresetClasses(
+    themeOverrides?.infoCardPreset,
+    themeOverrides?.infoCardFgPreset
+  );
   const grouped = cards.reduce<Record<string, InfoCard[]>>((acc, card) => {
     const key = card.card_type.toLowerCase().replace(/\s+/g, "_") || "custom";
     if (!acc[key]) acc[key] = [];
@@ -105,7 +111,8 @@ export function SidePanel({ cards, isOpen, onClose }: SidePanelProps) {
                   {sectionCards.map((card) => (
                     <div
                       key={card.id}
-                      className="rounded-lg border bg-card p-3 shadow-sm"
+                      className={`rounded-lg p-3 shadow-sm ${infoCardClass}`}
+                      style={infoCardStyle}
                     >
                       <h5 className="font-medium text-foreground mb-2">
                         {card.title}

@@ -8,6 +8,8 @@ import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, 
 import type { ContextItem } from "./ContextStrip";
 import { getOptionIcon } from "@/lib/icons/option-icons";
 import { getOptionDisplayName } from "@/lib/options/display-names";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getForegroundColor } from "@/lib/theme-presets";
 
 function splitIntoWidgetGroups(widgets: Widget[]): { type: "welcome_messages" | "single"; widgets: Widget[] }[] {
   const groups: { type: "welcome_messages" | "single"; widgets: Widget[] }[] = [];
@@ -70,6 +72,11 @@ export function MessageBubble({
   const [showCollapsed, setShowCollapsed] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const themeOverrides = usePublicTheme();
+  const chatMessageFgColor =
+    isPublicMode && themeOverrides?.chatMessageFgPreset
+      ? getForegroundColor(themeOverrides.chatMessageFgPreset)
+      : null;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -200,7 +207,10 @@ export function MessageBubble({
       className="group/msg flex items-start gap-3 relative cursor-pointer"
     >
       <div className={avatarWrapperClass}>{avatarEl}</div>
-      <div className="flex-1 min-w-0 space-y-3">
+      <div
+        className={`flex-1 min-w-0 space-y-3 ${chatMessageFgColor ? "[&_.text-foreground]:!text-inherit [&_.text-muted-foreground]:!text-inherit" : ""}`}
+        style={chatMessageFgColor ? { color: chatMessageFgColor } : undefined}
+      >
         {/* Collapsed conversation toggle */}
         {hasCollapsed && (
           <button

@@ -807,12 +807,36 @@ function ensureBannerUrlFromKeys(params: Record<string, unknown>, optionId: stri
   return out;
 }
 
+function ensureThemeOverridesFromPresets(
+  params: Record<string, unknown>,
+  optionId: string
+): Record<string, unknown> {
+  if (!["public_site.configure", "admin.public_site.configure"].includes(optionId)) {
+    return params;
+  }
+  const existing = (params.theme_overrides as Record<string, unknown>) ?? {};
+  const themeOverrides: Record<string, unknown> = { ...existing };
+  if (params.theme_header_preset != null) themeOverrides.headerPreset = params.theme_header_preset;
+  if (params.theme_bottom_nav_preset != null) themeOverrides.bottomNavPreset = params.theme_bottom_nav_preset;
+  if (params.theme_about_me_preset != null) themeOverrides.aboutMePreset = params.theme_about_me_preset;
+  if (params.theme_info_card_preset != null) themeOverrides.infoCardPreset = params.theme_info_card_preset;
+  if (params.theme_welcome_message_preset != null) themeOverrides.welcomeMessagePreset = params.theme_welcome_message_preset;
+  if (params.theme_header_fg_preset != null) themeOverrides.headerFgPreset = params.theme_header_fg_preset;
+  if (params.theme_bottom_nav_fg_preset != null) themeOverrides.bottomNavFgPreset = params.theme_bottom_nav_fg_preset;
+  if (params.theme_about_me_fg_preset != null) themeOverrides.aboutMeFgPreset = params.theme_about_me_fg_preset;
+  if (params.theme_info_card_fg_preset != null) themeOverrides.infoCardFgPreset = params.theme_info_card_fg_preset;
+  if (params.theme_welcome_message_fg_preset != null) themeOverrides.welcomeMessageFgPreset = params.theme_welcome_message_fg_preset;
+  if (params.theme_chat_message_fg_preset != null) themeOverrides.chatMessageFgPreset = params.theme_chat_message_fg_preset;
+  return { ...params, theme_overrides: themeOverrides };
+}
+
 async function executeWithHandler(
   option: OptionDefinition,
   params: Record<string, unknown>,
   context: UserContext
 ): Promise<import("@/types/pipeline").SqlResult[]> {
-  let effectiveParams = ensureAvatarUrlFromKeys(params, option.id);
+  let effectiveParams = ensureThemeOverridesFromPresets(params, option.id);
+  effectiveParams = ensureAvatarUrlFromKeys(effectiveParams, option.id);
   effectiveParams = ensureBannerUrlFromKeys(effectiveParams, option.id);
   effectiveParams = ensureInfoCardContentParams(effectiveParams, option.id);
   const handlerId = option.handler_id ?? "sql";
@@ -1202,7 +1226,7 @@ async function enrichSessionParamsWithPublicSiteConfig(
     const db = createServiceSupabase();
     const { data } = await db
       .from("public_site_configs")
-      .select("welcome_message, site_title, enabled_option_ids")
+      .select("welcome_message, site_title, enabled_option_ids, theme_overrides")
       .eq("tenant_id", tenantId)
       .eq("user_id", userId)
       .single();
@@ -1217,6 +1241,42 @@ async function enrichSessionParamsWithPublicSiteConfig(
     }
     if (merged.enabled_option_ids == null && data.enabled_option_ids != null) {
       merged.enabled_option_ids = data.enabled_option_ids;
+    }
+    const themeOverrides = data.theme_overrides as Record<string, unknown> | null;
+    if (themeOverrides && typeof themeOverrides === "object") {
+      if (merged.theme_header_preset == null && themeOverrides.headerPreset != null) {
+        merged.theme_header_preset = themeOverrides.headerPreset;
+      }
+      if (merged.theme_bottom_nav_preset == null && themeOverrides.bottomNavPreset != null) {
+        merged.theme_bottom_nav_preset = themeOverrides.bottomNavPreset;
+      }
+      if (merged.theme_about_me_preset == null && themeOverrides.aboutMePreset != null) {
+        merged.theme_about_me_preset = themeOverrides.aboutMePreset;
+      }
+      if (merged.theme_info_card_preset == null && themeOverrides.infoCardPreset != null) {
+        merged.theme_info_card_preset = themeOverrides.infoCardPreset;
+      }
+      if (merged.theme_welcome_message_preset == null && themeOverrides.welcomeMessagePreset != null) {
+        merged.theme_welcome_message_preset = themeOverrides.welcomeMessagePreset;
+      }
+      if (merged.theme_header_fg_preset == null && themeOverrides.headerFgPreset != null) {
+        merged.theme_header_fg_preset = themeOverrides.headerFgPreset;
+      }
+      if (merged.theme_bottom_nav_fg_preset == null && themeOverrides.bottomNavFgPreset != null) {
+        merged.theme_bottom_nav_fg_preset = themeOverrides.bottomNavFgPreset;
+      }
+      if (merged.theme_about_me_fg_preset == null && themeOverrides.aboutMeFgPreset != null) {
+        merged.theme_about_me_fg_preset = themeOverrides.aboutMeFgPreset;
+      }
+      if (merged.theme_info_card_fg_preset == null && themeOverrides.infoCardFgPreset != null) {
+        merged.theme_info_card_fg_preset = themeOverrides.infoCardFgPreset;
+      }
+      if (merged.theme_welcome_message_fg_preset == null && themeOverrides.welcomeMessageFgPreset != null) {
+        merged.theme_welcome_message_fg_preset = themeOverrides.welcomeMessageFgPreset;
+      }
+      if (merged.theme_chat_message_fg_preset == null && themeOverrides.chatMessageFgPreset != null) {
+        merged.theme_chat_message_fg_preset = themeOverrides.chatMessageFgPreset;
+      }
     }
     return merged;
   } catch {

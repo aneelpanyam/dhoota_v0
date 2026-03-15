@@ -14,6 +14,8 @@ import { isDebugPanelEnabled } from "@/lib/auth/public-mode";
 import { SidePanel } from "./SidePanel";
 import { Loader2, Info, AlertTriangle } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
+import { PublicThemeProvider } from "@/lib/contexts/PublicThemeContext";
+import { getPresetStyles } from "@/lib/theme-presets";
 
 export function ChatContainer() {
   const router = useRouter();
@@ -26,7 +28,19 @@ export function ChatContainer() {
     publicSiteConfig?: {
       welcomeMessage: string;
       sidePanelContent: unknown;
-      themeOverrides: unknown;
+      themeOverrides?: {
+        headerPreset?: string;
+        bottomNavPreset?: string;
+        aboutMePreset?: string;
+        infoCardPreset?: string;
+        welcomeMessagePreset?: string;
+        headerFgPreset?: string;
+        bottomNavFgPreset?: string;
+        aboutMeFgPreset?: string;
+        infoCardFgPreset?: string;
+        welcomeMessageFgPreset?: string;
+        chatMessageFgPreset?: string;
+      };
       enabledOptionIds: string[];
       siteTitle?: string | null;
       infoCards?: { id: string; title: string; content: unknown; card_type: string; icon?: string; display_order: number }[];
@@ -134,8 +148,14 @@ export function ChatContainer() {
   }, [chat.messages]);
 
   const showSidebar = sessionLoaded && !isPublic;
+  const themeOverrides = sessionContext?.publicSiteConfig?.themeOverrides;
+  const headerStyles =
+    isPublic && themeOverrides
+      ? getPresetStyles(themeOverrides.headerPreset, themeOverrides.headerFgPreset)
+      : null;
 
   return (
+    <PublicThemeProvider themeOverrides={themeOverrides}>
     <div className="flex h-screen w-full max-w-full overflow-x-hidden bg-background">
       {showSidebar && (
         <ConversationSidebar
@@ -152,7 +172,8 @@ export function ChatContainer() {
         <header
           className={`h-14 border-b flex items-center shrink-0 gap-3 ${
             showSidebar ? "px-6 pl-14 md:pl-6" : "px-6"
-          }`}
+          } ${headerStyles ? "[&_.text-muted-foreground]:!text-inherit [&_.text-foreground]:!text-inherit" : ""}`}
+          style={headerStyles ?? undefined}
         >
           <div className="w-10 h-10 shrink-0 rounded overflow-hidden flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -357,6 +378,7 @@ export function ChatContainer() {
           isPublicMode={isPublic}
           featureFlags={sessionContext?.featureFlags ?? []}
           representativeAvatarUrl={isPublic ? sessionContext?.publicSiteConfig?.representativeAvatarUrl ?? undefined : undefined}
+          themeOverrides={isPublic ? themeOverrides : undefined}
           onOptionSelect={(optionId, params) => {
             recordActivity();
             chat.sendMessage({
@@ -375,11 +397,13 @@ export function ChatContainer() {
           cards={sessionContext?.publicSiteConfig?.infoCards ?? []}
           isOpen={sidePanelOpen}
           onClose={() => setSidePanelOpen(false)}
+          themeOverrides={themeOverrides}
         />
       )}
       {isDebugPanelEnabled() && (
         <DebugPanel conversationId={chat.conversationId} />
       )}
     </div>
+    </PublicThemeProvider>
   );
 }

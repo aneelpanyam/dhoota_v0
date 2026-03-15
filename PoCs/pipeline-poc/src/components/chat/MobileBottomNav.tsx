@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { OptionReference } from "@/types/api";
 import { getOptionIcon } from "@/lib/icons/option-icons";
+import { getPresetStyles } from "@/lib/theme-presets";
 
 const TENANT_TOP_OPTIONS = [
   { optionId: "activity.create", icon: PlusCircle, label: "Add Activity" },
@@ -23,6 +24,7 @@ interface MobileBottomNavProps {
   isPublicMode: boolean;
   featureFlags?: string[];
   representativeAvatarUrl?: string | null;
+  themeOverrides?: { bottomNavPreset?: string; bottomNavFgPreset?: string };
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
   /** When provided, public.info_cards opens the side panel instead of running the option */
@@ -34,6 +36,7 @@ export function MobileBottomNav({
   isPublicMode,
   featureFlags = [],
   representativeAvatarUrl,
+  themeOverrides,
   onOptionSelect,
   onExplore,
   onOpenInfoPanel,
@@ -84,6 +87,10 @@ export function MobileBottomNav({
       }));
 
   const moreOptions = isPublicMode ? publicMoreOptions : tenantMoreOptions;
+  const navStyles =
+    isPublicMode && themeOverrides
+      ? getPresetStyles(themeOverrides.bottomNavPreset, themeOverrides.bottomNavFgPreset)
+      : null;
 
   const NavButton = ({
     actionId,
@@ -144,8 +151,9 @@ export function MobileBottomNav({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 md:hidden w-full max-w-[100vw] border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)]"
+      className={`fixed bottom-0 left-0 right-0 z-40 md:hidden w-full max-w-[100vw] border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)] ${navStyles ? "[&_.text-muted-foreground]:!text-inherit [&_.text-foreground]:!text-inherit" : ""}`}
       aria-label="Bottom navigation"
+      style={navStyles ?? undefined}
     >
       <div className="flex items-stretch justify-around h-14 [&>*]:border-r [&>*]:border-border [&>*:last-child]:border-r-0">
         <NavButton

@@ -4,6 +4,8 @@ import Markdown from "react-markdown";
 import { User } from "lucide-react";
 import type { Widget, WidgetAction, OptionReference } from "@/types/api";
 import { HeaderActionStrip } from "./HeaderActionStrip";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getCardPresetClasses } from "@/lib/theme-presets";
 
 interface Props {
   widget: Widget;
@@ -19,11 +21,16 @@ export function PublicProfileWidget({ widget, onOptionSelect, headerActions }: P
   const displayName = (widget.data.displayName as string) ?? "Representative";
   const welcomeMessage = (widget.data.welcomeMessage as string) ?? "";
   const avatarUrl = widget.data.avatarUrl as string | undefined;
+  const themeOverrides = usePublicTheme();
+  const { className: cardClass, style: cardStyle } = getCardPresetClasses(
+    themeOverrides?.aboutMePreset,
+    themeOverrides?.aboutMeFgPreset
+  );
 
   const hasFooter = headerActions && headerActions.length > 0 && onOptionSelect;
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div className={`rounded-xl overflow-hidden ${cardClass}`} style={cardStyle}>
       <div className="flex flex-col sm:flex-row gap-4 p-4">
         <div className="flex shrink-0 justify-center sm:justify-start">
           {avatarUrl ? (

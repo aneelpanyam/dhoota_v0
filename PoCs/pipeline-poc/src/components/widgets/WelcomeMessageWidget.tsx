@@ -3,6 +3,8 @@
 import Markdown from "react-markdown";
 import { Globe } from "lucide-react";
 import type { Widget, WidgetAction } from "@/types/api";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getCardPresetClasses } from "@/lib/theme-presets";
 
 interface Props {
   widget: Widget;
@@ -23,11 +25,16 @@ export function WelcomeMessageWidget({
   const text = (widget.data.text as string) ?? "";
   const bannerImageUrl = widget.data.bannerImageUrl as string | undefined;
   const representativeAvatarUrl = widget.data.representativeAvatarUrl as string | undefined;
+  const themeOverrides = usePublicTheme();
+  const { className: cardClass, style: cardStyle } = getCardPresetClasses(
+    themeOverrides?.welcomeMessagePreset,
+    themeOverrides?.welcomeMessageFgPreset
+  );
 
   return (
-    <article className="overflow-hidden px-4">
+    <article className={`overflow-hidden rounded-xl ${cardClass}`} style={cardStyle}>
       {bannerImageUrl && (
-        <div className="aspect-video md:aspect-[6/1] w-full overflow-hidden rounded-lg bg-muted">
+        <div className="aspect-video md:aspect-[6/1] w-full overflow-hidden bg-muted">
           <img
             src={bannerImageUrl}
             alt=""
@@ -35,7 +42,7 @@ export function WelcomeMessageWidget({
           />
         </div>
       )}
-      <div className="flex gap-4">
+      <div className="flex gap-4 p-4">
         {false && <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-border bg-muted">
           {representativeAvatarUrl ? (
             <img
