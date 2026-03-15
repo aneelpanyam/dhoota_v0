@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import type { ContextItem } from "@/components/chat/ContextStrip";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getWidgetBorderStyle, getWidgetFgStyle } from "@/lib/theme-presets";
 import { MediaLightbox, type LightboxImage } from "./MediaLightbox";
 
 interface Props {
@@ -59,6 +61,9 @@ function isImageMime(item: Record<string, unknown>): boolean {
 
 export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext }: Props) {
   const [isEditing, setIsEditing] = useState(false);
+  const themeOverrides = usePublicTheme();
+  const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
   const d = widget.data;
   const effectiveOnPinToContext = (d._noPin as boolean) ? undefined : onPinToContext;
   const title = (d.title as string) ?? "Untitled Activity";
@@ -106,7 +111,10 @@ export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext
   const imageMedia = media.filter((m) => isImageMime(m) && resolveMediaUrl(m));
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+    <div
+      className={`rounded-xl border bg-card overflow-hidden shadow-sm ${widgetFgClass}`}
+      style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+    >
       {/* Hero image / grid -- social media style */}
       {imageMedia.length > 0 && <MediaGrid images={imageMedia} />}
 

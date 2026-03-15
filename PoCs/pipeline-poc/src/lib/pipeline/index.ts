@@ -814,20 +814,26 @@ function ensureThemeOverridesFromPresets(
   if (!["public_site.configure", "admin.public_site.configure"].includes(optionId)) {
     return params;
   }
-  const existing = (params.theme_overrides as Record<string, unknown>) ?? {};
+  let p = { ...params };
+  const themeSettings = p.theme_settings as Record<string, unknown> | undefined;
+  if (themeSettings && typeof themeSettings === "object") {
+    p = { ...p, ...themeSettings };
+    delete p.theme_settings;
+  }
+  const existing = (p.theme_overrides as Record<string, unknown>) ?? {};
   const themeOverrides: Record<string, unknown> = { ...existing };
-  if (params.theme_header_preset != null) themeOverrides.headerPreset = params.theme_header_preset;
-  if (params.theme_bottom_nav_preset != null) themeOverrides.bottomNavPreset = params.theme_bottom_nav_preset;
-  if (params.theme_about_me_preset != null) themeOverrides.aboutMePreset = params.theme_about_me_preset;
-  if (params.theme_info_card_preset != null) themeOverrides.infoCardPreset = params.theme_info_card_preset;
-  if (params.theme_welcome_message_preset != null) themeOverrides.welcomeMessagePreset = params.theme_welcome_message_preset;
-  if (params.theme_header_fg_preset != null) themeOverrides.headerFgPreset = params.theme_header_fg_preset;
-  if (params.theme_bottom_nav_fg_preset != null) themeOverrides.bottomNavFgPreset = params.theme_bottom_nav_fg_preset;
-  if (params.theme_about_me_fg_preset != null) themeOverrides.aboutMeFgPreset = params.theme_about_me_fg_preset;
-  if (params.theme_info_card_fg_preset != null) themeOverrides.infoCardFgPreset = params.theme_info_card_fg_preset;
-  if (params.theme_welcome_message_fg_preset != null) themeOverrides.welcomeMessageFgPreset = params.theme_welcome_message_fg_preset;
-  if (params.theme_chat_message_fg_preset != null) themeOverrides.chatMessageFgPreset = params.theme_chat_message_fg_preset;
-  return { ...params, theme_overrides: themeOverrides };
+  if (p.theme_header_preset != null) themeOverrides.headerPreset = p.theme_header_preset;
+  if (p.theme_bottom_nav_preset != null) themeOverrides.bottomNavPreset = p.theme_bottom_nav_preset;
+  if (p.theme_about_me_preset != null) themeOverrides.aboutMePreset = p.theme_about_me_preset;
+  if (p.theme_info_card_preset != null) themeOverrides.infoCardPreset = p.theme_info_card_preset;
+  if (p.theme_welcome_message_preset != null) themeOverrides.welcomeMessagePreset = p.theme_welcome_message_preset;
+  if (p.theme_header_fg_preset != null) themeOverrides.headerFgPreset = p.theme_header_fg_preset;
+  if (p.theme_bottom_nav_fg_preset != null) themeOverrides.bottomNavFgPreset = p.theme_bottom_nav_fg_preset;
+  if (p.theme_about_me_fg_preset != null) themeOverrides.aboutMeFgPreset = p.theme_about_me_fg_preset;
+  if (p.theme_info_card_fg_preset != null) themeOverrides.infoCardFgPreset = p.theme_info_card_fg_preset;
+  if (p.theme_welcome_message_fg_preset != null) themeOverrides.welcomeMessageFgPreset = p.theme_welcome_message_fg_preset;
+  if (p.theme_chat_message_fg_preset != null) themeOverrides.chatMessageFgPreset = p.theme_chat_message_fg_preset;
+  return { ...p, theme_overrides: themeOverrides };
 }
 
 async function executeWithHandler(

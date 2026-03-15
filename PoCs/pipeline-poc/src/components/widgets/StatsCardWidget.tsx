@@ -2,6 +2,8 @@
 
 import type { Widget, WidgetAction } from "@/types/api";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getWidgetBorderStyle, getWidgetFgStyle } from "@/lib/theme-presets";
 
 interface Props {
   widget: Widget;
@@ -14,6 +16,9 @@ interface Props {
 
 export function StatsCardWidget({ widget }: Props) {
   const d = widget.data;
+  const themeOverrides = usePublicTheme();
+  const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
   const label = (d.label as string) ?? "Stat";
   const value = d.value as string | number;
   const change = d.change as number | undefined;
@@ -29,7 +34,10 @@ export function StatsCardWidget({ widget }: Props) {
   const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
 
   return (
-    <div className="rounded-xl border bg-card p-4 inline-block min-w-[140px]">
+    <div
+      className={`rounded-xl border bg-card p-4 inline-block min-w-[140px] ${widgetFgClass}`}
+      style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+    >
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <p className="text-2xl font-bold">{value}</p>
       {(change !== undefined || changeLabel) && (

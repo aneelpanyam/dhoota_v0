@@ -1,6 +1,8 @@
 "use client";
 
 import type { Widget, OptionReference } from "@/types/api";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getWidgetBorderStyle, getWidgetFgStyle } from "@/lib/theme-presets";
 import {
   Activity,
   CheckCircle2,
@@ -55,6 +57,9 @@ interface Props {
 
 export function StatsGridWidget({ widget, onOptionSelect, headerActions }: Props) {
   const stats = (widget.data?.stats as StatItem[] | undefined) ?? [];
+  const themeOverrides = usePublicTheme();
+  const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
 
   if (stats.length === 0) return null;
 
@@ -69,7 +74,11 @@ export function StatsGridWidget({ widget, onOptionSelect, headerActions }: Props
       {stats.map((stat) => {
         const { icon: Icon, color } = iconForLabel(stat.label);
         return (
-          <div key={stat.label} className={cellClass}>
+          <div
+            key={stat.label}
+            className={`${cellClass} ${!hasFooter ? widgetFgClass : ""}`}
+            style={!hasFooter ? { ...widgetBorderStyle, ...widgetFgStyle } : undefined}
+          >
             <Icon className={`h-4 w-4 shrink-0 ${color}`} />
             <div className="min-w-0 flex-1">
               <span className="text-base font-bold leading-tight whitespace-nowrap">
@@ -88,7 +97,10 @@ export function StatsGridWidget({ widget, onOptionSelect, headerActions }: Props
   if (!hasFooter) return grid;
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div
+      className={`rounded-xl border bg-card overflow-hidden ${widgetFgClass}`}
+      style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+    >
       <div className="p-4">{grid}</div>
       <div className="flex items-center justify-end gap-1 px-4 py-2 border-t text-xs text-muted-foreground min-w-0">
         <HeaderActionStrip

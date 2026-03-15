@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { Widget, WidgetAction } from "@/types/api";
 import { Pencil, Trash2, Globe, Lock, Pin, FileText } from "lucide-react";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getWidgetBorderStyle, getWidgetFgStyle } from "@/lib/theme-presets";
 import { EditAnnouncementFormWidget } from "./EditAnnouncementFormWidget";
 import Markdown from "react-markdown";
 
@@ -18,6 +20,9 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 
 export function AnnouncementCardWidget({ widget, onAction, onConfirm }: Props) {
   const [isEditing, setIsEditing] = useState(false);
+  const themeOverrides = usePublicTheme();
+  const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
   const d = widget.data;
   const title = (d.title as string) ?? "Untitled";
   const content = (d.content as string) ?? "";
@@ -49,7 +54,10 @@ export function AnnouncementCardWidget({ widget, onAction, onConfirm }: Props) {
   const actions = widget.actions ?? [];
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+    <div
+      className={`rounded-xl border bg-card overflow-hidden shadow-sm ${widgetFgClass}`}
+      style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+    >
       <div className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

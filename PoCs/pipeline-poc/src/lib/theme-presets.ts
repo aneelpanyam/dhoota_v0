@@ -14,14 +14,14 @@ export const HEADER_NAV_PRESETS = [
   { id: "teal", label: "Teal", backgroundColor: "#0d9488", textColor: "#ffffff" },
 ] as const;
 
-/** Card presets: bgClassName (background + border), fgClassName (text when fg not overridden) */
+/** Card presets: bgClassName (background + border), fgClassName (text when fg not overridden). Option A: border uses preset main color. */
 export const CARD_PRESETS = [
   { id: "default", label: "Default", bgClassName: "bg-card border", fgClassName: "" },
   { id: "minimal", label: "Minimal", bgClassName: "bg-transparent border", fgClassName: "" },
   { id: "subtle", label: "Subtle", bgClassName: "bg-muted/30 border", fgClassName: "" },
-  { id: "saffron", label: "Saffron", bgClassName: "bg-[#FF9933] border border-[#e68a2e]", fgClassName: "text-[#1a1a1a] [&_.text-foreground]:!text-[#1a1a1a] [&_.text-muted-foreground]:!text-[#334155]" },
-  { id: "navy", label: "Navy", bgClassName: "bg-[#1e3a5f] border border-[#2d4a6f]", fgClassName: "text-[#f8fafc] [&_.text-foreground]:!text-[#f8fafc] [&_.text-muted-foreground]:!text-[#cbd5e1]" },
-  { id: "teal", label: "Teal", bgClassName: "bg-[#0d9488] border border-[#0f766e]", fgClassName: "text-[#ffffff] [&_.text-foreground]:!text-[#ffffff] [&_.text-muted-foreground]:!text-[#ccfbf1]" },
+  { id: "saffron", label: "Saffron", bgClassName: "bg-[#FF9933] border border-[#FF9933]", fgClassName: "text-[#1a1a1a] [&_.text-foreground]:!text-[#1a1a1a] [&_.text-muted-foreground]:!text-[#334155]" },
+  { id: "navy", label: "Navy", bgClassName: "bg-[#1e3a5f] border border-[#1e3a5f]", fgClassName: "text-[#f8fafc] [&_.text-foreground]:!text-[#f8fafc] [&_.text-muted-foreground]:!text-[#cbd5e1]" },
+  { id: "teal", label: "Teal", bgClassName: "bg-[#0d9488] border border-[#0d9488]", fgClassName: "text-[#ffffff] [&_.text-foreground]:!text-[#ffffff] [&_.text-muted-foreground]:!text-[#ccfbf1]" },
 ] as const;
 
 export type HeaderNavPresetId = (typeof HEADER_NAV_PRESETS)[number]["id"];
@@ -30,11 +30,43 @@ export type CardPresetId = (typeof CARD_PRESETS)[number]["id"];
 export interface PresetStyles {
   backgroundColor?: string;
   color: string;
+  borderColor?: string;
 }
 
 export interface CardPresetResult {
   className: string;
   style?: React.CSSProperties;
+}
+
+/**
+ * Returns border style for widgets when a preset is set.
+ * Accepts both card preset IDs and header/nav preset IDs.
+ */
+export function getWidgetBorderStyle(presetId: string | null | undefined): React.CSSProperties | undefined {
+  if (!presetId || presetId === "default") return undefined;
+  const cardPreset = CARD_PRESETS.find((p) => p.id === presetId);
+  if (cardPreset) {
+    const match = cardPreset.bgClassName.match(/border-\[#([0-9a-fA-F]+)\]/);
+    if (match) return { borderColor: `#${match[1]}` };
+  }
+  const headerPreset = HEADER_NAV_PRESETS.find((p) => p.id === presetId);
+  if (headerPreset?.backgroundColor) return { borderColor: headerPreset.backgroundColor };
+  return undefined;
+}
+
+/**
+ * Returns text color style and inherit class for widgets when fg preset is set.
+ * Use headerFgPreset for consistency with header/nav theme.
+ */
+export function getWidgetFgStyle(presetId: string | null | undefined): {
+  style?: React.CSSProperties;
+  inheritClass: string;
+} {
+  const color = presetId && presetId !== "default" ? getForegroundColor(presetId) : null;
+  return {
+    style: color ? { color } : undefined,
+    inheritClass: color ? "[&_.text-foreground]:!text-inherit [&_.text-muted-foreground]:!text-inherit" : "",
+  };
 }
 
 /**
@@ -69,6 +101,7 @@ export function getPresetStyles(
   return {
     backgroundColor: preset.backgroundColor,
     color: fgColor ?? preset.textColor,
+    borderColor: preset.backgroundColor,
   };
 }
 

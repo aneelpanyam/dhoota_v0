@@ -23,6 +23,8 @@ import { ActivityStatsBar } from "./ActivityStatsBar";
 import { useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { getOptionIcon, isValidOptionIcon } from "@/lib/icons/option-icons";
 import { getOptionDisplayName } from "@/lib/options/display-names";
+import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
+import { getWidgetBorderStyle, getWidgetFgStyle } from "@/lib/theme-presets";
 
 type ActivityViewMode = "list" | "calendar" | "timeline" | "stats";
 
@@ -179,6 +181,9 @@ function HeaderActionButton({
 
 export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, onPinToContext, headerActions }: Props) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const themeOverrides = usePublicTheme();
+  const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
   const [viewMode, setViewMode] = useState<ActivityViewMode>("list");
   const [viewModeDropdownOpen, setViewModeDropdownOpen] = useState(false);
   const [pressedHeaderActionId, setPressedHeaderActionId] = useState<string | null>(null);
@@ -227,14 +232,20 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground text-sm">
+      <div
+        className={`rounded-xl border bg-card p-6 text-center text-muted-foreground text-sm ${widgetFgClass}`}
+        style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+      >
         No items to display.
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div
+      className={`rounded-xl border bg-card overflow-hidden ${widgetFgClass}`}
+      style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+    >
       {/* View mode tabs for activity lists */}
       {hasActivityFields && items.length > 0 && (
         <div className="px-3 pt-3 pb-1">
@@ -242,7 +253,8 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
           <div ref={viewModeDropdownRef} className="relative md:hidden">
             <button
               onClick={() => setViewModeDropdownOpen((v) => !v)}
-              className="flex items-center justify-between w-full gap-2 px-3 py-2 rounded-lg border bg-card text-sm font-medium hover:bg-muted/50 transition"
+              className={`flex items-center justify-between w-full gap-2 px-3 py-2 rounded-lg border bg-card text-sm font-medium hover:bg-muted/50 transition ${widgetFgClass}`}
+              style={{ ...widgetBorderStyle, ...widgetFgStyle }}
             >
               {(() => {
                 const mode = VIEW_MODES.find((m) => m.id === viewMode);
@@ -259,7 +271,10 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
               })()}
             </button>
             {viewModeDropdownOpen && (
-              <div className="absolute left-0 right-0 top-full mt-1 py-1 rounded-lg border bg-card shadow-lg z-50">
+              <div
+                className={`absolute left-0 right-0 top-full mt-1 py-1 rounded-lg border bg-card shadow-lg z-50 ${widgetFgClass}`}
+                style={{ ...widgetBorderStyle, ...widgetFgStyle }}
+              >
                 {VIEW_MODES.map((mode) => {
                   const Icon = mode.icon;
                   const isActive = viewMode === mode.id;

@@ -53,7 +53,8 @@ export type InlineWidgetType =
   | "multi_select"
   | "table"
   | "list"
-  | "markdown_editor";
+  | "markdown_editor"
+  | "theme_editor";
 
 export interface OptionQuestion {
   id: string;

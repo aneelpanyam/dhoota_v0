@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
 import { Send, X, Upload, FileIcon, Plus, Trash2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
+import { ThemeEditorWidget, type ThemeSettings } from "@/components/widgets/ThemeEditorWidget";
 import { isValidEmail, validateAccessCodeStrength, validateByParamSchema } from "@/lib/validation";
 
 interface PendingFile {
@@ -688,6 +689,15 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
             </button>
           </div>
         </div>
+      ) : effectiveInlineWidget === "theme_editor" ? (
+        <ThemeEditorWidget
+          sessionParams={sessionParams}
+          onSubmit={(theme: ThemeSettings) => {
+            const updatedParams = { ...sessionParams, [questionKey]: theme };
+            onQAResponse(optionId, updatedParams);
+          }}
+          onCancel={onCancel}
+        />
       ) : effectiveInlineWidget === "file_upload" ? (
         <div className="space-y-2">
           {currentAvatarUrl && questionKey === "avatar_keys" && (
