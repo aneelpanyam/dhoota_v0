@@ -298,6 +298,11 @@ function StepRow({
                     <span>Params: [{q.params.map((p) => p === null ? "NULL" : typeof p === "string" ? `'${p.length > 30 ? p.slice(0, 30) + "..." : p}'` : String(p)).join(", ")}]</span>
                     <span>{q.rowCount} row{q.rowCount !== 1 ? "s" : ""}</span>
                   </div>
+                  <DebugCollapsible label="Fully formed SQL (params substituted)" color="blue">
+                    <pre className="text-[10px] text-blue-900/80 bg-blue-50 rounded p-1.5 whitespace-pre-wrap break-all max-h-48 overflow-y-auto font-mono">
+                      {substituteSqlParams(q.sql, q.params)}
+                    </pre>
+                  </DebugCollapsible>
                 </div>
               ))}
             </div>
@@ -365,4 +370,22 @@ function formatJsonString(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+/** Reconstructs the SQL as executed (params substituted for $1, $2, etc.) */
+function substituteSqlParams(sql: string, params: unknown[]): string {
+  let out = sql;
+  for (let i = params.length; i >= 1; i--) {
+    const val = params[i - 1];
+    const replacement =
+      val === null
+        ? "NULL"
+        : typeof val === "number"
+          ? String(val)
+          : typeof val === "object"
+            ? `'${JSON.stringify(val).replace(/'/g, "''")}'`
+            : `'${String(val).replace(/'/g, "''")}'`;
+    out = out.replace(new RegExp(`\\$${i}(?!\\d)`, "g"), replacement);
+  }
+  return out;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { formatValueForDisplay } from "@/lib/display-format";
 import type {
   ChatMessageResponse,
   SendMessageRequest,
@@ -489,17 +490,7 @@ export function useChat(): UseChatReturn {
 }
 
 function formatParamForDisplay(val: unknown, key: string): string {
-  if (val == null || val === "") return "";
-  if (key === "amount") {
-    const n = typeof val === "number" ? val : Number(String(val).replace(/[^0-9.-]/g, ""));
-    return Number.isNaN(n) ? String(val) : `$${n.toFixed(2)}`;
-  }
-  if (key === "cost_type") {
-    const s = String(val);
-    return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
-  return String(val);
+  return formatValueForDisplay(val, key);
 }
 
 function freezeInteractiveWidget(
@@ -540,7 +531,21 @@ function freezeInteractiveWidget(
   if (w.type === "confirmation_card") {
     const title = (w.data.title as string) ?? "Confirmation";
     const fields = (w.data.fields as { label: string; value: string }[]) ?? [];
-    const lines = fields.map((f) => `**${f.label}:** ${f.value}`);
+    const params = (w.data.params as Record<string, unknown>) ?? {};
+    const lines = fields
+      .map((f) => {
+        let val = f.value;
+        if (val === "[object Object]") {
+          const labelLower = f.label.toLowerCase();
+          const isMediaField = /photos|videos|media|attachments|files/.test(labelLower);
+          val = isMediaField
+            ? formatValueForDisplay(params.media_keys, "media_keys")
+            : "—";
+          if (!val) return null;
+        }
+        return `**${f.label}:** ${val}`;
+      })
+      .filter((line): line is string => line != null);
     return {
       ...w,
       type: "text_response",

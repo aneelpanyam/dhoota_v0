@@ -82,8 +82,20 @@ export async function GET() {
       ? await loadEnabledFlags(session.tenantId)
       : [];
 
+    let tenantName: string | null = null;
+    if (session?.tenantId) {
+      const db = createServiceSupabase();
+      const { data } = await db
+        .from("tenants")
+        .select("name")
+        .eq("id", session.tenantId)
+        .single();
+      tenantName = data?.name ?? null;
+    }
+
     return NextResponse.json({
       user: session,
+      tenantName,
       publicMode,
       suggestionBoxMode,
       publicSiteConfig,
@@ -92,7 +104,7 @@ export async function GET() {
     });
   } catch {
     return NextResponse.json(
-      { user: null, publicMode: false, suggestionBoxMode: false, publicSiteConfig: null, conversationContext: "tracker", featureFlags: [] },
+      { user: null, tenantName: null, publicMode: false, suggestionBoxMode: false, publicSiteConfig: null, conversationContext: "tracker", featureFlags: [] },
       { status: 200 }
     );
   }

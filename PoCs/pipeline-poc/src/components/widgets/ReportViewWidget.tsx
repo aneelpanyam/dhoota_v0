@@ -4,6 +4,7 @@ import { useRef, useCallback } from "react";
 import type { Widget, WidgetAction } from "@/types/api";
 import ReactMarkdown from "react-markdown";
 import { Download } from "lucide-react";
+import { formatValueForDisplay } from "@/lib/display-format";
 
 interface DataItemSection {
   title: string;
@@ -88,7 +89,7 @@ export function ReportViewWidget({ widget }: Props) {
                       <tr key={ri} className="border-b last:border-0">
                         {section.columns.map((col) => (
                           <td key={col.key} className="py-2 px-2">
-                            {String(row[col.key] ?? "")}
+                            {formatValueForDisplay(row[col.key], col.key)}
                           </td>
                         ))}
                       </tr>

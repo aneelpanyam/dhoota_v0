@@ -54,6 +54,16 @@ export function normalizeParams(
         if (/^\d{4}-\d{2}-\d{2}$/.test(slice)) normalized[key] = slice;
       }
     }
+    // For format date-time: coerce YYYY-MM-DD to ISO 8601 (e.g. "2026-03-15" -> "2026-03-15T00:00:00.000Z")
+    if (prop?.format === "date-time" && key in normalized) {
+      const val = normalized[key];
+      if (typeof val === "string" && val.trim() !== "") {
+        const slice = val.slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(slice)) {
+          normalized[key] = `${slice}T00:00:00.000Z`;
+        }
+      }
+    }
     // For enum: match case-insensitively and handle display format (e.g. "Worker" -> "worker", "Team Worker" -> "team_worker")
     // Also fix UUID mistakenly sent (e.g. tenant_id leaked when default select has no change event)
     if (prop?.enum && Array.isArray(prop.enum) && key in normalized) {

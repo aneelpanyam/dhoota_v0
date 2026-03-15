@@ -1,6 +1,7 @@
 "use client";
 
 import type { Widget, WidgetAction } from "@/types/api";
+import { formatValueForDisplay } from "@/lib/display-format";
 
 interface Props {
   widget: Widget;
@@ -42,7 +43,7 @@ export function DataTableWidget({ widget }: Props) {
               <tr key={ri} className="hover:bg-muted/30 transition">
                 {row.map((cell, ci) => (
                   <td key={ci} className="px-4 py-2.5">
-                    {String(cell)}
+                    {formatValueForDisplay(cell)}
                   </td>
                 ))}
               </tr>

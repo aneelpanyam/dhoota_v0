@@ -476,3 +476,18 @@ All LLM calls use `temperature: 0` for deterministic output except where creativ
 **Why this matters:** The platform's value isn't just in querying data — it's in providing AI-powered intelligence on top of user data. "Give me activity ideas like this one" or "What could improve this activity?" are the kinds of queries that differentiate the platform from a simple CRUD tool.
 
 ---
+
+## 35. Extending List Options with Optional Scope/Visibility Filters
+
+**Decision:** When an option needs to support filtered views (e.g. "my public activities" vs "my non-public activities"), extend the existing option with optional Q&A questions rather than creating separate options.
+
+**Pattern (activity.list):**
+
+- Add optional `option_questions` for scope and visibility (both `is_required: false`)
+- Wire params to SQL: `($4::text IS NULL OR $4 = 'all' OR a.created_by = $5)` for scope; similar for visibility
+- Defaults when user skips: `scope=all`, `visibility=all` → preserves current behavior
+- One option serves multiple use cases: "my public", "my non-public", "all"
+
+**Why:** Avoids option proliferation, reuses existing formatter and follow-ups, and keeps the conversational UX. Applicable to other list options (e.g. announcements, programs) when similar filter needs arise.
+
+---

@@ -15,3 +15,9 @@ export function getPublicUserId(): string | null {
 export function getPublicTenantId(): string | null {
   return process.env.NEXT_PUBLIC_DHOOTA_PUBLIC_TENANT_ID ?? process.env.DHOOTA_PUBLIC_TENANT_ID ?? null;
 }
+
+/** Enable the pipeline debug panel (authenticated and public views). Default: false. */
+export function isDebugPanelEnabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_DHOOTA_DEBUG_PANEL ?? process.env.DHOOTA_DEBUG_PANEL;
+  return v === "true" || v === "1";
+}

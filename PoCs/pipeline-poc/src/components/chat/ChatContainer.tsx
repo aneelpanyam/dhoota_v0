@@ -9,8 +9,9 @@ import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { DebugPanel } from "./DebugPanel";
+import { isDebugPanelEnabled } from "@/lib/auth/public-mode";
 import { SidePanel } from "./SidePanel";
-import { Loader2, Info } from "lucide-react";
+import { Loader2, Info, AlertTriangle } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
 
 export function ChatContainer() {
@@ -20,6 +21,7 @@ export function ChatContainer() {
 
   const [sessionContext, setSessionContext] = useState<{
     publicMode: boolean;
+    tenantName?: string | null;
     publicSiteConfig?: {
       welcomeMessage: string;
       sidePanelContent: unknown;
@@ -162,7 +164,9 @@ export function ChatContainer() {
           <h1 className="text-lg font-semibold">
             {isPublic
               ? (sessionContext?.publicSiteConfig?.siteTitle ?? sessionContext?.user?.displayName ?? "Dhoota")
-              : "Dhoota"}
+              : sessionContext?.tenantName
+                ? `Dhoota For ${sessionContext.tenantName}`
+                : "Dhoota"}
           </h1>
           {isPublic && (
             <button
@@ -177,6 +181,16 @@ export function ChatContainer() {
             <Loader2 className="ml-3 h-4 w-4 animate-spin text-muted-foreground" />
           )}
         </header>
+
+        {/* System admin warning banner */}
+        {!isPublic && sessionContext?.user?.userType === "system_admin" && (
+          <div className="px-6 pl-14 md:pl-6 pt-2 shrink-0">
+            <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>You are logged in as a system administrator. Please be careful about your actions—changes may affect tenants and system configuration.</span>
+            </div>
+          </div>
+        )}
 
         {/* Error banner (public mode) */}
         {isPublic && chat.error && (
@@ -297,7 +311,9 @@ export function ChatContainer() {
           onClose={() => setSidePanelOpen(false)}
         />
       )}
-      {!isPublic && <DebugPanel conversationId={chat.conversationId} />}
+      {isDebugPanelEnabled() && (
+        <DebugPanel conversationId={chat.conversationId} />
+      )}
     </div>
   );
 }

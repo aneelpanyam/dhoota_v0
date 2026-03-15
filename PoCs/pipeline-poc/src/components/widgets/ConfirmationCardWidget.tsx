@@ -25,6 +25,18 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function formatFieldValue(
+  field: { label: string; value: string },
+  mediaFiles: MediaFile[]
+): string | null {
+  if (field.value !== "[object Object]") return field.value;
+  const labelLower = field.label.toLowerCase();
+  const isMediaField = /photos|videos|media|attachments|files/.test(labelLower);
+  if (isMediaField && mediaFiles.length > 0) return `${mediaFiles.length} file(s) attached`;
+  if (isMediaField && mediaFiles.length === 0) return null;
+  return "—";
+}
+
 function parseMediaFiles(mediaKeys: unknown): MediaFile[] {
   if (!Array.isArray(mediaKeys)) return [];
   return mediaKeys
@@ -372,19 +384,23 @@ export function ConfirmationCardWidget({ widget, onConfirm, onCancel }: Props) {
 
       {/* Fields */}
       <div className="space-y-2">
-        {fields.map((field, i) => (
-          <div key={i} className="flex items-start gap-2 text-sm">
-            <span className="text-muted-foreground min-w-[100px] shrink-0">
-              {formatLabel(field.label)}:
-            </span>
-            <span className="flex-1">
-              {field.value}
-              {field.inferred && (
-                <span className="ml-1.5 text-xs text-primary/70 italic">(inferred)</span>
-              )}
-            </span>
-          </div>
-        ))}
+        {fields.map((field, i) => {
+          const displayValue = formatFieldValue(field, mediaFiles);
+          if (displayValue === null) return null;
+          return (
+            <div key={i} className="flex items-start gap-2 text-sm">
+              <span className="text-muted-foreground min-w-[100px] shrink-0">
+                {formatLabel(field.label)}:
+              </span>
+              <span className="flex-1">
+                {displayValue}
+                {field.inferred && (
+                  <span className="ml-1.5 text-xs text-primary/70 italic">(inferred)</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Attached files */}

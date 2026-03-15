@@ -10,6 +10,7 @@ const SPECIALIZED_FORMATTERS: Record<
   (sqlResults: SqlResult[], option: OptionDefinition, params?: Record<string, unknown>) => FormattedResponse
 > = {
   "activity.list": formatActivityList,
+  "activity.recent": formatActivityList,
   "activity.view": formatActivityView,
   "activity.create": formatActivityWriteResult,
   "activity.edit": formatActivityWriteResult,
@@ -44,6 +45,8 @@ const SPECIALIZED_FORMATTERS: Record<
   "admin.announcement.view": formatAnnouncementView,
   "admin.info_card.view": formatInfoCardView,
   "public.about": formatPublicAbout,
+  "public.activities": formatPublicActivityList,
+  "public.recent_activities": formatPublicActivityList,
   "public_site.welcome_message.view": formatWelcomeMessageView,
   "profile.set_avatar": formatProfileSetAvatar,
 };
@@ -474,7 +477,9 @@ function formatActivityList(
   option: OptionDefinition,
   params?: Record<string, unknown>
 ): FormattedResponse {
-  const listResult = sqlResults.find((r) => r.templateName === "list_activities");
+  const listResult = sqlResults.find((r) =>
+    r.templateName === "list_activities" || r.templateName === "list_recent_activities"
+  );
   const countResult = sqlResults.find((r) => r.templateName === "count_activities");
   const rows = listResult?.rows ?? [];
 
@@ -519,6 +524,8 @@ function formatActivityList(
   let summary: string;
   if (totalItems === 0) {
     summary = "You don't have any activities yet. Let's add one!";
+  } else if (option.list_summary_template) {
+    summary = option.list_summary_template.replace(/\{\{count\}\}/g, String(totalItems));
   } else if (totalItems > currentPageSize) {
     const start = (currentPage - 1) * currentPageSize + 1;
     const end = Math.min(currentPage * currentPageSize, totalItems);
@@ -609,6 +616,56 @@ function formatInfoCardWriteResult(
       ? `"${title}" has been created successfully.`
       : `"${title}" has been updated.`,
     widgets: [{ type: "info_card", data: card }],
+    followUpOptionIds: option.follow_up_option_ids,
+  };
+}
+
+function formatPublicActivityList(
+  sqlResults: SqlResult[],
+  option: OptionDefinition
+): FormattedResponse {
+  const listResult = sqlResults.find((r) =>
+    r.templateName === "list_public_activities" || r.templateName === "list_recent_public_activities"
+  );
+  const rows = listResult?.rows ?? [];
+  const items = rows.map((row) => {
+    const summary = row.ai_summary as Record<string, unknown> | null;
+    return {
+      ...row,
+      title: summary?.enhancedTitle ?? row.title,
+      description: summary?.enhancedDescription ?? row.description,
+    };
+  });
+  const columns = [
+    { key: "title", label: "Title" },
+    { key: "activity_date", label: "Date" },
+    { key: "location", label: "Location" },
+    { key: "tags", label: "Tags" },
+  ];
+  const totalItems = items.length;
+  let summary: string;
+  if (totalItems === 0) {
+    summary = "No public activities to show yet.";
+  } else if (option.list_summary_template) {
+    summary = option.list_summary_template.replace(/\{\{count\}\}/g, String(totalItems));
+  } else {
+    summary = `Here are ${totalItems} public activit${totalItems === 1 ? "y" : "ies"}.`;
+  }
+  return {
+    summary,
+    widgets: items.length > 0
+      ? [{
+          type: "data_list",
+          data: {
+            items,
+            columns,
+            totalItems,
+            page: 1,
+            pageSize: totalItems,
+            paginationOptionId: option.id === "public.recent_activities" ? "public.activities" : undefined,
+          },
+        }]
+      : [],
     followUpOptionIds: option.follow_up_option_ids,
   };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
-import { Send, X, Upload, FileIcon, FileText, Plus, Trash2, Eye, EyeOff } from "lucide-react";
+import { Send, X, Upload, FileIcon, FileText, Plus, Trash2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
 import { isValidEmail, validateAccessCodeStrength, validateByParamSchema } from "@/lib/validation";
 
@@ -151,6 +151,43 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
     const defaultTags = (widgetConfig.defaultTags as string[] | undefined);
     return Array.isArray(defaultTags) ? defaultTags : [];
   });
+  const [newTagText, setNewTagText] = useState("");
+  const [addTagLoading, setAddTagLoading] = useState(false);
+  const [addTagError, setAddTagError] = useState<string | null>(null);
+
+  const handleAddTag = useCallback(async () => {
+    const name = newTagText.trim();
+    if (!name || addTagLoading) return;
+    setAddTagError(null);
+    setAddTagLoading(true);
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddTagError(data.error ?? "Failed to add tag");
+        return;
+      }
+      const opt = data.option as { value: string; label: string } | undefined;
+      if (opt) {
+        setDynamicOptions((prev) => {
+          if (prev.some((o) => o.value === opt.value)) return prev;
+          return [...prev, opt].sort((a, b) => a.label.localeCompare(b.label));
+        });
+        setTagSelectedValues((prev) =>
+          prev.includes(opt.value) ? prev : [...prev, opt.value]
+        );
+        setNewTagText("");
+      }
+    } catch {
+      setAddTagError("Failed to add tag");
+    } finally {
+      setAddTagLoading(false);
+    }
+  }, [newTagText, addTagLoading]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -369,6 +406,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
         <div className="flex items-center gap-2">
           {!isRequired && (
             <button
+              type="button"
               onClick={handleSkip}
               className="text-xs text-muted-foreground hover:text-foreground transition"
             >
@@ -376,6 +414,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
             </button>
           )}
           <button
+            type="button"
             onClick={onCancel}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition"
           >
@@ -517,12 +556,14 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
                   Object.fromEntries(columns.map((c) => [c.key, c.type === "file_upload" ? [] : ""])),
                 ])
               }
+              type="button"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
             >
               <Plus className="h-4 w-4" />
               Add row
             </button>
             <button
+              type="button"
               onClick={handleSubmit}
               className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
@@ -549,6 +590,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
                   className="flex-1 px-3 py-2 rounded-lg border bg-muted/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
                 <button
+                  type="button"
                   onClick={() => setListItems((prev) => prev.filter((_, j) => j !== i))}
                   className="p-2 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
@@ -559,6 +601,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => setListItems((prev) => [...prev, ""])}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
             >
@@ -566,6 +609,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
               {(widgetConfig.addLabel as string) ?? "Add item"}
             </button>
             <button
+              type="button"
               onClick={handleSubmit}
               className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
@@ -583,6 +627,7 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
           />
           <div className="flex justify-end">
             <button
+              type="button"
               onClick={handleSubmit}
               className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
@@ -601,30 +646,60 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
               {dynamicOptions.map((opt) => {
                 const checked = tagSelectedValues.includes(opt.value);
                 return (
-                  <label
+                  <button
                     key={opt.value}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition ${
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTagSelectedValues((prev) =>
+                        checked ? prev.filter((v) => v !== opt.value) : [...prev, opt.value]
+                      );
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition text-left ${
                       checked ? "bg-primary/10 border-primary/30 text-primary" : "bg-muted/30 border-transparent hover:bg-muted/50"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        setTagSelectedValues((prev) =>
-                          e.target.checked ? [...prev, opt.value] : prev.filter((v) => v !== opt.value)
-                        );
-                      }}
-                      className="sr-only"
-                    />
                     <span className="text-sm">{opt.label}</span>
-                  </label>
+                  </button>
                 );
               })}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={newTagText}
+              onChange={(e) => {
+                setNewTagText(e.target.value);
+                setAddTagError(null);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
+              placeholder="Add new tag..."
+              className="flex-1 min-w-[120px] px-3 py-1.5 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <button
+              type="button"
+              onClick={handleAddTag}
+              disabled={!newTagText.trim() || addTagLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {addTagLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Add
+            </button>
+          </div>
+          {addTagError && (
+            <p className="text-xs text-destructive">{addTagError}</p>
+          )}
           <div className="flex justify-end">
             <button
+              type="button"
               onClick={handleSubmit}
               className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >

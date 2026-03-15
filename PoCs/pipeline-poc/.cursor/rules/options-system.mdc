@@ -212,7 +212,7 @@ Use the admin options to manage these:
 | Option | Questions | Notes |
 |--------|-----------|-------|
 | `activity.create` | 5: description_raw*, activity_date, location, media_keys, visibility | Main create flow |
-| `activity.list` | 0 | Read-only, no params needed |
+| `activity.list` | 2: scope (all/mine), visibility (all/public/non_public) | Both optional. Read-only. |
 | `activity.view` | 0 | Triggered with `activity_id` from list |
 | `activity.edit` | 6: title, description, activity_date, location, status, visibility | All optional, per-field |
 | `activity.delete` | 0 | Triggered with `activity_id`, has confirmation |

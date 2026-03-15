@@ -41,13 +41,13 @@ export function ErrorCardWidget({ widget, onOptionSelect, onConfirm, onQARespons
   }
 
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-2">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-destructive" />
-        <p className="text-sm font-medium text-destructive">{message}</p>
+    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-2 min-w-0">
+      <div className="flex items-start gap-2 min-w-0">
+        <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+        <p className="text-sm font-medium text-destructive break-words min-w-0">{message}</p>
       </div>
       {details && (
-        <p className="text-xs text-muted-foreground">{details}</p>
+        <p className="text-xs text-muted-foreground break-words min-w-0">{details}</p>
       )}
       {retryable && retryRequest && (
         <button

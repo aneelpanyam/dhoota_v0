@@ -15,6 +15,7 @@ import {
   HelpCircle, LayoutGrid, Info,
 } from "lucide-react";
 import Markdown from "react-markdown";
+import { formatValueForDisplay } from "@/lib/display-format";
 import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
 import { ActivityTimelineView } from "./ActivityTimelineView";
@@ -580,12 +581,17 @@ function TagListItem({
   const source = (item.source as string) ?? "system";
   const count = (item.activity_count as number) ?? 0;
 
-  const handleDrillDown = () => {
+  const handleDrillDown = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     onOptionSelect?.("analysis.activities", { tag: name });
   };
 
   return (
     <div
+      role={onOptionSelect ? "button" : undefined}
+      tabIndex={onOptionSelect ? 0 : undefined}
+      onKeyDown={onOptionSelect ? (e) => e.key === "Enter" && handleDrillDown(e) : undefined}
       className={`flex items-center gap-3 ${onOptionSelect ? "cursor-pointer group" : ""}`}
       onClick={onOptionSelect ? handleDrillDown : undefined}
     >
@@ -1069,9 +1075,10 @@ function formatCellValue(key: string, value: unknown, col?: { key: string; label
     return value;
   }
   if (Array.isArray(value)) {
-    if (value.length === 0) return "—";
-    if (typeof value[0] === "string") return value.join(", ");
-    return `${value.length} items`;
+    return formatValueForDisplay(value, key) || "—";
+  }
+  if (typeof value === "object" && value !== null) {
+    return formatValueForDisplay(value, key);
   }
   return String(value ?? "—");
 }

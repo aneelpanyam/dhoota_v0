@@ -108,7 +108,7 @@ function sanitizeDisplaySummary(summary: Record<string, string>) {
     if (typeof val !== "string") {
       summary[key] = String(val);
     }
-    if (val && val.includes("[object Object]")) {
+    if ((summary[key] ?? "").includes("[object Object]")) {
       delete summary[key];
     }
   }

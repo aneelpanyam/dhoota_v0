@@ -26,7 +26,7 @@ Options for internal tenant members.
 |-----------|------|---------|
 | `activity.create` | Add Activity | Create a new activity to track something you did or plan to do. Captures title, description, date, location, tags, media, and visibility. |
 | `activity.create_bulk` | Add Activities in Bulk | Add multiple activities at once. Each row can include description, date, location, visibility, and optional photos. |
-| `activity.list` | View Activities | Show a list of your recent activities with filtering and sorting options. |
+| `activity.list` | View Activities | Show a list of activities. Optional filters: scope (all vs my activities) and visibility (all, public only, private & team). Use to view what's published or find activities to mark as public. |
 | `activity.view` | View Activity Details | View the full details of a specific activity including notes and media. |
 | `activity.edit` | Edit Activity | Edit an existing activity—change title, description, date, location, status, visibility, or tags. |
 | `activity.delete` | Delete Activity | Soft-delete an activity. It can be recovered later. |
