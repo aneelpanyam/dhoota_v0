@@ -150,8 +150,13 @@ export function MessageList({
 
   useEffect(() => {
     const count = messages.length;
-    // Only scroll when new messages are added (not on initial load: 0 -> N)
-    if (prevMessageCount.current > 0 && count > prevMessageCount.current) {
+    const hasUserMessage = messages.some((m) => m.role === "user");
+    // Only scroll to bottom when user has sent a message and we get a new response (not during init streaming)
+    if (
+      prevMessageCount.current > 0 &&
+      count > prevMessageCount.current &&
+      hasUserMessage
+    ) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
     prevMessageCount.current = count;

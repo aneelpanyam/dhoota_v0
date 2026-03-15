@@ -95,34 +95,6 @@ export async function POST(request: Request) {
         conversationState: "active",
       };
 
-      const initResults: ChatMessageResponse[] = [];
-      const availableIds = new Set(context.availableOptions.map((o) => o.id));
-      const initIdsToRun = context.initOptionIds.filter((id) => availableIds.has(id));
-
-      if (initIdsToRun.length > 0) {
-        const promises = initIdsToRun.map((optionId) =>
-          processMessage(
-            {
-              conversationId,
-              source: "default_option",
-              optionId,
-              params: { page: 1, pageSize: 5 },
-            },
-            context
-          )
-        );
-
-        const results = await Promise.allSettled(promises);
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            initResults.push(result.value);
-          }
-          if (result.status === "rejected") {
-            logger.warn("api.chatInit", "Init option failed", { error: result.reason?.message ?? String(result.reason) });
-          }
-        }
-      }
-
       const menuMsg: ChatMessageResponse = {
         messageId: generateId(),
         conversationId,
@@ -132,14 +104,65 @@ export async function POST(request: Request) {
         conversationState: "active",
       };
 
+      const availableIds = new Set(context.availableOptions.map((o) => o.id));
+      const initIdsToRun = context.initOptionIds.filter((id) => availableIds.has(id));
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const emit = (obj: unknown) =>
+            controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+
+          try {
+            emit({
+              type: "start",
+              conversationId,
+              userConfig: { userType: "citizen", theme: {}, displayName: "Citizen" },
+            });
+            emit({ type: "message", message: welcomeMsg });
+
+            const initResults: ChatMessageResponse[] = [];
+            if (initIdsToRun.length > 0) {
+              const promises = initIdsToRun.map((optionId) =>
+                processMessage(
+                  { conversationId, source: "default_option", optionId, params: { page: 1, pageSize: 5 } },
+                  context
+                )
+              );
+              const emitPromises = promises.map((p) =>
+                p
+                  .then((msg) => {
+                    initResults.push(msg);
+                    return emit({ type: "message", message: msg });
+                  })
+                  .catch((err) => {
+                    logger.warn("api.chatInit", "Init option failed", {
+                      error: err instanceof Error ? err.message : String(err),
+                    });
+                  })
+              );
+              await Promise.all(emitPromises);
+            }
+
+            emit({ type: "message", message: menuMsg });
+            emit({ type: "done" });
+          } catch (err) {
+            logger.error("api.chatInit", "Stream error", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            emit({ type: "error", error: err instanceof Error ? err.message : "Stream failed" });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
       logger.clearTraceId();
-      return NextResponse.json({
-        conversationId,
-        messages: [welcomeMsg, ...initResults, menuMsg],
-        userConfig: {
-          userType: "citizen",
-          theme: {},
-          displayName: "Citizen",
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "application/x-ndjson",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
         },
       });
     }
@@ -189,33 +212,6 @@ export async function POST(request: Request) {
       .eq("conversation_id", conversationId);
 
     const hasExistingMessages = (msgCount ?? 0) > 0;
-
-    // Execute init options in parallel (fresh data each time)
-    const initResults: ChatMessageResponse[] = [];
-
-    if (context.initOptionIds.length > 0) {
-      const promises = context.initOptionIds.map((optionId) =>
-        processMessage(
-          {
-            conversationId: conversationId!,
-            source: "default_option",
-            optionId,
-            params: { page: 1, pageSize: 5 },
-          },
-          context
-        )
-      );
-
-      const results = await Promise.allSettled(promises);
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          initResults.push(result.value);
-        }
-        if (result.status === "rejected") {
-          logger.warn("api.chatInit", "Init option failed", { error: result.reason?.message ?? String(result.reason) });
-        }
-      }
-    }
 
     const defaultOpts = optionsToReferences(context.defaultOptions);
 
@@ -323,42 +319,105 @@ export async function POST(request: Request) {
       conversationState: "active",
     };
 
-    // Save init messages to DB so they persist when loading later
-    const allInitMessages = [welcomeMessage, ...initResults, menuMessage];
-    const messageRows = allInitMessages.map((msg) => {
-      const textWidgets = msg.widgets.filter((w) => w.type === "text_response");
-      const content = (textWidgets.length > 0 ? textWidgets[textWidgets.length - 1]?.data?.text : null) as string | null;
-      return {
-        id: msg.messageId,
-        conversation_id: conversationId,
-        tenant_id: session.tenantId,
-        role: "assistant",
-        content: content ?? null,
-        source: "init",
-        widgets: msg.widgets,
-        follow_ups: msg.followUps,
-      };
+    // Stream init response: send welcome first, then each init result as it completes, then menu
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const emit = (obj: unknown) =>
+          controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+
+        try {
+          emit({
+            type: "start",
+            conversationId,
+            userConfig: {
+              userType: session.userType,
+              theme: {},
+              displayName: session.displayName,
+            },
+          });
+          emit({ type: "message", message: welcomeMessage });
+
+          const initResults: ChatMessageResponse[] = [];
+          if (context.initOptionIds.length > 0) {
+            const promises = context.initOptionIds.map((optionId) =>
+              processMessage(
+                {
+                  conversationId: conversationId!,
+                  source: "default_option",
+                  optionId,
+                  params: { page: 1, pageSize: 5 },
+                },
+                context
+              )
+            );
+
+            // Emit each init result as soon as it completes (parallel completion order)
+            const emitPromises = promises.map((p) =>
+              p
+                .then((msg) => {
+                  initResults.push(msg);
+                  return emit({ type: "message", message: msg });
+                })
+                .catch((err) => {
+                  logger.warn("api.chatInit", "Init option failed", {
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                })
+            );
+            await Promise.all(emitPromises);
+          }
+
+          emit({ type: "message", message: menuMessage });
+          emit({ type: "done" });
+
+          // Save init messages to DB so they persist when loading later
+          const allInitMessages = [welcomeMessage, ...initResults, menuMessage];
+          const messageRows = allInitMessages.map((msg) => {
+            const textWidgets = msg.widgets.filter((w) => w.type === "text_response");
+            const content = (textWidgets.length > 0
+              ? textWidgets[textWidgets.length - 1]?.data?.text
+              : null) as string | null;
+            return {
+              id: msg.messageId,
+              conversation_id: conversationId,
+              tenant_id: session.tenantId,
+              role: "assistant",
+              content: content ?? null,
+              source: "init",
+              widgets: msg.widgets,
+              follow_ups: msg.followUps,
+            };
+          });
+
+          if (!hasExistingMessages) {
+            await db.from("messages").insert(messageRows);
+          }
+
+          await db
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", conversationId);
+        } catch (err) {
+          logger.error("api.chatInit", "Stream error", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          emit({
+            type: "error",
+            error: err instanceof Error ? err.message : "Stream failed",
+          });
+        } finally {
+          controller.close();
+        }
+      },
     });
 
-    // Only save init messages for brand new conversations (not returning visits)
-    if (!hasExistingMessages) {
-      await db.from("messages").insert(messageRows);
-    }
-
-    // Update timestamp
-    await db
-      .from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
-
     logger.clearTraceId();
-    return NextResponse.json({
-      conversationId,
-      messages: allInitMessages,
-      userConfig: {
-        userType: session.userType,
-        theme: {},
-        displayName: session.displayName,
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (err) {

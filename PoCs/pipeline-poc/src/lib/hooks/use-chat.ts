@@ -81,6 +81,7 @@ export function useChat(): UseChatReturn {
   const initialize = useCallback(async (forceNew = false) => {
     setIsLoading(true);
     setError(null);
+    setMessages([]);
 
     try {
       const [initRes] = await Promise.all([
@@ -94,31 +95,114 @@ export function useChat(): UseChatReturn {
 
       if (!initRes.ok) throw new Error("Failed to initialize");
 
-      const data: InitResponse = await initRes.json();
-      setConversationId(data.conversationId);
-      conversationIdRef.current = data.conversationId;
-      setUserDisplayName(data.userConfig.displayName);
+      const contentType = initRes.headers.get("Content-Type") ?? "";
+      if (contentType.includes("application/x-ndjson")) {
+        // Streamed response: append messages as they arrive
+        const reader = initRes.body?.getReader();
+        if (!reader) throw new Error("No response body");
 
-      const chatMessages: ChatMessage[] = data.messages.map((msg) => ({
-        id: msg.messageId,
-        role: "assistant" as const,
-        content: undefined,
-        response: msg,
-        timestamp: new Date(),
-      }));
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let convId: string | null = null;
 
-      for (const msg of data.messages) {
-        if (msg.debugTrace) {
-          storeDebugTrace(data.conversationId, msg.messageId, msg.debugTrace);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const chunk = JSON.parse(line) as {
+              type: string;
+              conversationId?: string;
+              userConfig?: { displayName?: string };
+              message?: ChatMessageResponse;
+              error?: string;
+            };
+
+            if (chunk.type === "start") {
+              convId = chunk.conversationId ?? null;
+              setConversationId(convId);
+              conversationIdRef.current = convId;
+              setUserDisplayName(chunk.userConfig?.displayName ?? "");
+            } else if (chunk.type === "message" && chunk.message) {
+              const msg = chunk.message;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: msg.messageId,
+                  role: "assistant" as const,
+                  content: undefined,
+                  response: msg,
+                  timestamp: new Date(),
+                },
+              ]);
+              if (msg.debugTrace && convId) {
+                storeDebugTrace(convId, msg.messageId, msg.debugTrace);
+              }
+              setDefaultOptions(msg.defaultOptions);
+              setConversationState(msg.conversationState);
+            } else if (chunk.type === "error") {
+              setError(chunk.error ?? "Stream failed");
+            }
+          }
         }
-      }
+        // Handle any remaining buffer (last line may not end with \n)
+        if (buffer.trim()) {
+          try {
+            const chunk = JSON.parse(buffer) as { type: string; message?: ChatMessageResponse; error?: string };
+            if (chunk.type === "message" && chunk.message) {
+              const msg = chunk.message;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: msg.messageId,
+                  role: "assistant" as const,
+                  content: undefined,
+                  response: msg,
+                  timestamp: new Date(),
+                },
+              ]);
+              setDefaultOptions(msg.defaultOptions);
+              setConversationState(msg.conversationState);
+            } else if (chunk.type === "error") {
+              setError(chunk.error ?? "Stream failed");
+            }
+          } catch {
+            // Ignore partial JSON in buffer
+          }
+        }
+      } else {
+        // Fallback: non-streamed JSON response
+        const data: InitResponse = await initRes.json();
+        setConversationId(data.conversationId);
+        conversationIdRef.current = data.conversationId;
+        setUserDisplayName(data.userConfig.displayName);
 
-      setMessages(chatMessages);
+        const chatMessages: ChatMessage[] = data.messages.map((msg) => ({
+          id: msg.messageId,
+          role: "assistant" as const,
+          content: undefined,
+          response: msg,
+          timestamp: new Date(),
+        }));
 
-      if (data.messages.length > 0) {
-        const lastMsg = data.messages[data.messages.length - 1];
-        setDefaultOptions(lastMsg.defaultOptions);
-        setConversationState(lastMsg.conversationState);
+        for (const msg of data.messages) {
+          if (msg.debugTrace) {
+            storeDebugTrace(data.conversationId, msg.messageId, msg.debugTrace);
+          }
+        }
+
+        setMessages(chatMessages);
+
+        if (data.messages.length > 0) {
+          const lastMsg = data.messages[data.messages.length - 1];
+          setDefaultOptions(lastMsg.defaultOptions);
+          setConversationState(lastMsg.conversationState);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initialize");
