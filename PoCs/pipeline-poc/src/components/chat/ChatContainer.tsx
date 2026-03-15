@@ -278,10 +278,12 @@ export function ChatContainer() {
           }}
           onOptionSelect={(optionId, params) => {
             recordActivity();
+            const isPagination = params?.__pagination === true;
+            const { __pagination: _strip, ...paramsForApi } = (params ?? {}) as Record<string, unknown> & { __pagination?: boolean };
             chat.sendMessage({
-              source: "default_option",
+              source: isPagination ? "pagination" : "default_option",
               optionId,
-              params,
+              params: Object.keys(paramsForApi).length > 0 ? paramsForApi : undefined,
             });
           }}
           onConfirm={(optionId, params) => {

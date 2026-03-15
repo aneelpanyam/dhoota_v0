@@ -5,7 +5,8 @@ export type MessageSource =
   | "default_option"
   | "qa_response"
   | "confirmation"
-  | "insights";
+  | "insights"
+  | "pagination";
 
 export interface FileReference {
   s3Key: string;

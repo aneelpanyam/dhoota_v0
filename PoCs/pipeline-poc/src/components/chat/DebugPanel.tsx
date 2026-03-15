@@ -19,12 +19,13 @@ export function DebugPanel({ conversationId }: DebugPanelProps) {
   const [traces, setTraces] = useState<StoredTrace[]>([]);
   const [expandedTrace, setExpandedTrace] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
-
   const loadTraces = useCallback(async () => {
     if (!conversationId) {
       setTraces([]);
       return;
     }
+    const clearedKey = `dhoota_debug_cleared_${conversationId}`;
+    const isCleared = typeof sessionStorage !== "undefined" && sessionStorage.getItem(clearedKey) === "1";
     try {
       const res = await fetch(`/api/chat/conversations/${conversationId}`);
       if (!res.ok) { setTraces([]); return; }
@@ -42,8 +43,9 @@ export function DebugPanel({ conversationId }: DebugPanelProps) {
           });
         }
       }
-      setTraces(parsed);
+      if (!isCleared) setTraces(parsed);
     } catch {
+      if (isCleared) return;
       try {
         const key = `dhoota_debug_${conversationId}`;
         const raw = localStorage.getItem(key);
@@ -70,6 +72,9 @@ export function DebugPanel({ conversationId }: DebugPanelProps) {
 
   const clearTraces = () => {
     if (!conversationId) return;
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(`dhoota_debug_cleared_${conversationId}`, "1");
+    }
     localStorage.removeItem(`dhoota_debug_${conversationId}`);
     setTraces([]);
   };

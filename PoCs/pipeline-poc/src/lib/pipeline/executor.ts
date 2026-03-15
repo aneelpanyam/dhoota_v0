@@ -128,7 +128,11 @@ function mapParams(
       sqlParams.push(contextMap[key] ?? null);
     } else if (path.startsWith("params.")) {
       const key = path.replace("params.", "");
-      sqlParams.push(params[key] ?? null);
+      let val = params[key] ?? null;
+      // Never pass null for pagination - PostgreSQL LIMIT NULL returns all rows
+      if (key === "pageSize" && (val == null || Number(val) <= 0)) val = 10;
+      if (key === "offset" && (val == null || Number(val) < 0)) val = 0;
+      sqlParams.push(val);
     } else {
       sqlParams.push(null);
     }
@@ -141,8 +145,10 @@ function ensurePaginationDefaults(
   params: Record<string, unknown>
 ): Record<string, unknown> {
   const out = { ...params };
-  if (!("pageSize" in out) || out.pageSize == null) out.pageSize = 10;
-  if (!("page" in out) || out.page == null) out.page = 1;
+  const pageSize = Number(out.pageSize);
+  const page = Number(out.page);
+  out.pageSize = (pageSize > 0 && Number.isFinite(pageSize)) ? pageSize : 10;
+  out.page = (page >= 1 && Number.isFinite(page)) ? page : 1;
   out.offset = (Number(out.page) - 1) * Number(out.pageSize);
   return out;
 }

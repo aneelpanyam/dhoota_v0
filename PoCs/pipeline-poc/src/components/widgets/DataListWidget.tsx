@@ -443,14 +443,14 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
                   <div className="flex gap-1 shrink-0">
                     <button
                       disabled={page <= 1}
-                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page - 1, pageSize })}
+                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page - 1, pageSize, __pagination: true })}
                       className="p-1 rounded hover:bg-muted disabled:opacity-30"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
                     <button
                       disabled={page * pageSize >= totalItems}
-                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page + 1, pageSize })}
+                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page + 1, pageSize, __pagination: true })}
                       className="p-1 rounded hover:bg-muted disabled:opacity-30"
                     >
                       <ChevronRight className="h-4 w-4" />

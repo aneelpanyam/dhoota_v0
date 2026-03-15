@@ -1,0 +1,7 @@
+-- 094: activity.list - Use COALESCE for LIMIT/OFFSET so NULL never returns all rows
+-- Safety net: even if params.pageSize/offset are null, we get LIMIT 10 OFFSET 0
+
+UPDATE sql_templates SET
+  sql = 'SELECT a.*, array_agg(DISTINCT jsonb_build_object(''id'', t.id, ''name'', t.name, ''color'', t.color)) FILTER (WHERE t.id IS NOT NULL) as tags, count(DISTINCT an.id) as note_count, count(DISTINCT am.id) as media_count, array_agg(DISTINCT jsonb_build_object(''id'', am.id, ''s3_key'', am.s3_key, ''mime_type'', am.mime_type, ''original_filename'', am.original_filename)) FILTER (WHERE am.id IS NOT NULL) as media FROM activities a LEFT JOIN activity_tags at2 ON a.id = at2.activity_id LEFT JOIN tags t ON at2.tag_id = t.id LEFT JOIN activity_notes an ON a.id = an.activity_id AND an.deleted_at IS NULL LEFT JOIN activity_media am ON a.id = am.activity_id WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND ($4::text IS NULL OR $4 = ''all'' OR a.created_by = $5) AND ($6::text IS NULL OR $6 = ''all'' OR ($6 = ''public'' AND a.visibility = ''public'') OR ($6 = ''non_public'' AND a.visibility IN (''private'',''team''))) GROUP BY a.id ORDER BY a.activity_date DESC LIMIT COALESCE(NULLIF($2::int, 0), 10) OFFSET COALESCE(GREATEST($3::int, 0), 0)',
+  param_mapping = '{"$1":"context.tenantId","$2":"params.pageSize","$3":"params.offset","$4":"params.scope","$5":"context.userId","$6":"params.visibility"}'::jsonb
+WHERE option_id = 'activity.list' AND name = 'list_activities';

@@ -10,6 +10,10 @@
 
 # misc
 .DS_Store
+
+# Lambda build artifacts
+/infra/image-optimizer/node_modules
+/infra/*.zip
 *.pem
 
 # debug

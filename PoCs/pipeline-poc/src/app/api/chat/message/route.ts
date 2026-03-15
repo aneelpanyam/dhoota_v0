@@ -13,7 +13,7 @@ const messageSchema = z.object({
   source: z.enum([
     "chat", "follow_up", "inline_action",
     "default_option", "qa_response", "confirmation",
-    "insights",
+    "insights", "pagination",
   ]),
   content: z.string().max(5000).optional(),
   optionId: z.string().max(100).optional(),
@@ -48,16 +48,19 @@ export async function POST(request: Request) {
     if (!isCitizen) {
       await ensureConversation(input.conversationId, session.tenantId, session.id);
 
-      const db = createServiceSupabase();
-      await db.from("messages").insert({
-        conversation_id: input.conversationId,
-        tenant_id: session.tenantId,
-        role: "user",
-        content: input.content ?? null,
-        source: input.source,
-        option_id: input.optionId ?? null,
-        input_params: input.params ?? null,
-      });
+      // Skip storing user message for pagination (in-place list update only)
+      if (input.source !== "pagination") {
+        const db = createServiceSupabase();
+        await db.from("messages").insert({
+          conversation_id: input.conversationId,
+          tenant_id: session.tenantId,
+          role: "user",
+          content: input.content ?? null,
+          source: input.source,
+          option_id: input.optionId ?? null,
+          input_params: input.params ?? null,
+        });
+      }
     }
 
     const context = await buildUserContext(session, input.conversationId);
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     const response = await processMessage(input, context, traceId);
     const executionMs = Date.now() - startTime;
 
-    if (!isCitizen) {
+    if (!isCitizen && input.source !== "pagination") {
       const db = createServiceSupabase();
       await db.from("messages").insert({
         id: response.messageId,
@@ -83,7 +86,10 @@ export async function POST(request: Request) {
           debugTrace: response.debugTrace,
         },
       });
+    }
 
+    if (!isCitizen) {
+      const db = createServiceSupabase();
       const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
@@ -101,7 +107,7 @@ export async function POST(request: Request) {
           const optionName = context.availableOptions.find(
             (o) => o.id === input.optionId
           )?.name;
-          if (optionName && input.source !== "default_option") {
+          if (optionName && input.source !== "default_option" && input.source !== "pagination") {
             updateData.title = optionName;
           }
         }

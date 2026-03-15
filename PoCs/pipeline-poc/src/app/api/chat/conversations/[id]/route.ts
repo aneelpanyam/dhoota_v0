@@ -31,7 +31,7 @@ export async function GET(
 
     const { data: messages } = await db
       .from("messages")
-      .select("id, role, content, source, option_id, widgets, follow_ups, created_at")
+      .select("id, role, content, source, option_id, widgets, follow_ups, metadata, created_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -64,6 +64,7 @@ export async function GET(
           defaultOptions: defaultOpts,
           conversationState: "active" as const,
           createdAt: m.created_at as string,
+          metadata: (m.metadata as Record<string, unknown>) ?? undefined,
         };
       });
 

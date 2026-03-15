@@ -289,12 +289,16 @@ export function useChat(): UseChatReturn {
       setIsLoading(true);
       setError(null);
 
-      // Start a new flow when the user picks an option or types free text
+      // Pagination: in-place update of existing list, no new messages
+      const isPagination = request.source === "pagination";
+
+      // Start a new flow when the user picks an option or types free text (not for pagination)
       const isFlowStart =
-        request.source === "default_option" ||
-        request.source === "inline_action" ||
-        request.source === "chat" ||
-        request.source === "insights";
+        !isPagination &&
+        (request.source === "default_option" ||
+          request.source === "inline_action" ||
+          request.source === "chat" ||
+          request.source === "insights");
 
       if (isFlowStart) {
         activeFlowIdRef.current = crypto.randomUUID();
@@ -303,8 +307,8 @@ export function useChat(): UseChatReturn {
       // All messages within an active flow (Q&A, confirmation, etc.) share the same flowId
       const currentFlowId = activeFlowIdRef.current ?? undefined;
 
-      // Add user message to the list and record flow start index
-      const userContent = deriveOptionSummary(request) ?? request.content ?? deriveUserContent(request);
+      // Add user message to the list and record flow start index (skip for pagination)
+      const userContent = !isPagination && (deriveOptionSummary(request) ?? request.content ?? deriveUserContent(request));
       if (userContent) {
         let insightContext: ChatMessage["contextItems"];
         if (request.source === "insights") {
@@ -454,6 +458,30 @@ export function useChat(): UseChatReturn {
                 }
               }
             }
+          } else if (request.source === "pagination") {
+            // Update the last data_list widget in place instead of appending a new message
+            const newDataList = data.widgets?.find((w) => w.type === "data_list");
+            if (newDataList) {
+              for (let i = updated.length - 1; i >= 0; i--) {
+                const msg = updated[i];
+                if (msg.role === "assistant" && msg.response?.widgets) {
+                  const listIdx = msg.response.widgets.findIndex((w) => w.type === "data_list");
+                  if (listIdx >= 0) {
+                    updated[i] = {
+                      ...msg,
+                      response: {
+                        ...msg.response,
+                        widgets: msg.response.widgets.map((w, wi) =>
+                          wi === listIdx ? { ...w, data: { ...w.data, ...newDataList.data } } : w
+                        ),
+                      },
+                    };
+                    return updated;
+                  }
+                }
+              }
+            }
+            // Fallback: if no matching data_list found, append (shouldn't happen)
           }
 
           updated.push(assistantMsg);

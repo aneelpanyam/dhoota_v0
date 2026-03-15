@@ -33,6 +33,10 @@ export function normalizeParams(
 
   const normalized = { ...params };
   for (const [key, prop] of Object.entries(props)) {
+    // Apply schema default when param is missing (ensures page/pageSize for list options)
+    if (!(key in normalized) && prop && "default" in prop && prop.default !== undefined) {
+      normalized[key] = prop.default;
+    }
     if (prop?.type === "boolean" && key in normalized) {
       const val = normalized[key];
       if (val === "true") normalized[key] = true;

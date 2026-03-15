@@ -241,10 +241,9 @@ export async function processMessage(
       resolved.extractedParams = confirmParams;
     }
 
-    const validation = validateParams(
-      resolved.extractedParams ?? {},
-      resolved.option!.input_schema
-    );
+    const rawParams = resolved.extractedParams ?? {};
+    const params = normalizeParams(rawParams, resolved.option!.input_schema);
+    const validation = validateParams(params, resolved.option!.input_schema);
     if (!validation.valid) {
       const result = buildErrorResponse(
         validation.errors?.join(" ") ?? "Invalid parameters.",
@@ -257,15 +256,15 @@ export async function processMessage(
 
     const sqlResults = await trace.step(
       "execute_sql",
-      () => executeWithHandler(resolved.option!, resolved.extractedParams ?? {}, context),
-      { optionId: resolved.option.id, params: resolved.extractedParams }
+      () => executeWithHandler(resolved.option!, params, context),
+      { optionId: resolved.option.id, params }
     );
     trace.enrichLastStep({ sql: consumeSqlDebug() ?? undefined });
-    logOptionExecution(resolved.option.id, context, resolved.extractedParams ?? {}, sqlResults, execStartMs, true);
+    logOptionExecution(resolved.option.id, context, params, sqlResults, execStartMs, true);
 
     const formatted = await trace.step(
       "format_response",
-      () => formatResponse(resolved.option!, sqlResults, context, resolved.extractedParams),
+      () => formatResponse(resolved.option!, sqlResults, context, params),
       { rowCounts: sqlResults.map((r) => ({ name: r.templateName, count: r.rowCount })) }
     );
 
@@ -281,7 +280,7 @@ export async function processMessage(
       bookmarkable: true,
     }));
 
-    const resourceId = extractResourceIdFromParams(resolved.extractedParams ?? {}, resolved.option)
+    const resourceId = extractResourceIdFromParams(params, resolved.option)
       ?? extractResourceId(sqlResults);
     const resultParams = extractResultParams(resolved.option, sqlResults);
     const followUps = buildFollowUps(resolved.option, context, resourceId, resultParams);

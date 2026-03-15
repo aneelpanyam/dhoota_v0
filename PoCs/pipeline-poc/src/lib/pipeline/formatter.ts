@@ -397,18 +397,24 @@ function formatGenericResults(
         }
       }
 
-      // Default: data_list
+      // Default: data_list (with pagination when count template exists)
       const columns = pickDisplayColumns(firstRow);
       if (columns.length > 0) {
         const itemActions = deriveItemActions(option.follow_up_option_ids ?? []);
         const currentPage = Number(params?.page ?? 1);
         const currentPageSize = Number(params?.pageSize ?? 10);
+        const countResult = sqlResults.find((r) =>
+          r.templateName.startsWith("count_") || r.templateName.endsWith("_count")
+        );
+        const totalItems = countResult?.rows[0]?.total_count != null
+          ? Number(countResult.rows[0].total_count)
+          : result.rows.length;
         widgets.push({
           type: "data_list",
           data: {
             items: result.rows,
             columns,
-            totalItems: result.rows.length,
+            totalItems,
             page: currentPage,
             pageSize: currentPageSize,
             paginationOptionId: option.id,
@@ -622,11 +628,13 @@ function formatInfoCardWriteResult(
 
 function formatPublicActivityList(
   sqlResults: SqlResult[],
-  option: OptionDefinition
+  option: OptionDefinition,
+  params?: Record<string, unknown>
 ): FormattedResponse {
   const listResult = sqlResults.find((r) =>
     r.templateName === "list_public_activities" || r.templateName === "list_recent_public_activities"
   );
+  const countResult = sqlResults.find((r) => r.templateName === "count_activities");
   const rows = listResult?.rows ?? [];
   const items = rows.map((row) => {
     const summary = row.ai_summary as Record<string, unknown> | null;
@@ -642,12 +650,20 @@ function formatPublicActivityList(
     { key: "location", label: "Location" },
     { key: "tags", label: "Tags" },
   ];
-  const totalItems = items.length;
+  const currentPage = Number(params?.page ?? 1);
+  const currentPageSize = Number(params?.pageSize ?? 10);
+  const totalItems = countResult?.rows[0]?.total_count != null
+    ? Number(countResult.rows[0].total_count)
+    : items.length;
   let summary: string;
   if (totalItems === 0) {
     summary = "No public activities to show yet.";
   } else if (option.list_summary_template) {
     summary = option.list_summary_template.replace(/\{\{count\}\}/g, String(totalItems));
+  } else if (totalItems > currentPageSize) {
+    const start = (currentPage - 1) * currentPageSize + 1;
+    const end = Math.min(currentPage * currentPageSize, totalItems);
+    summary = `Showing ${start}–${end} of ${totalItems} public activit${totalItems === 1 ? "y" : "ies"}.`;
   } else {
     summary = `Here are ${totalItems} public activit${totalItems === 1 ? "y" : "ies"}.`;
   }
@@ -660,9 +676,9 @@ function formatPublicActivityList(
             items,
             columns,
             totalItems,
-            page: 1,
-            pageSize: totalItems,
-            paginationOptionId: option.id === "public.recent_activities" ? "public.activities" : undefined,
+            page: currentPage,
+            pageSize: currentPageSize,
+            paginationOptionId: option.id,
           },
         }]
       : [],
@@ -1170,9 +1186,14 @@ function formatTagCreate(
 
 function formatAnalysisActivityList(
   sqlResults: SqlResult[],
-  option: OptionDefinition
+  option: OptionDefinition,
+  params?: Record<string, unknown>
 ): FormattedResponse {
-  const rows = sqlResults.flatMap((r) => r.rows);
+  const listResult = sqlResults.find((r) =>
+    r.templateName === "search_activities" || r.templateName === "find_activity"
+  );
+  const countResult = sqlResults.find((r) => r.templateName === "count_activities");
+  const rows = listResult?.rows ?? [];
 
   if (rows.length === 0) {
     const noun = option.id === "analysis.specific_activity" ? "matching activities" : "activities";
@@ -1199,10 +1220,19 @@ function formatAnalysisActivityList(
     { key: "tags", label: "Tags" },
   ];
 
-  const count = items.length;
+  const currentPage = Number(params?.page ?? 1);
+  const currentPageSize = Number(params?.pageSize ?? 10);
+  const totalItems = countResult?.rows[0]?.total_count != null
+    ? Number(countResult.rows[0].total_count)
+    : items.length;
+
   const summary = option.id === "analysis.specific_activity"
-    ? `Found ${count} matching activit${count === 1 ? "y" : "ies"}.`
-    : `Found ${count} activit${count === 1 ? "y" : "ies"}.`;
+    ? (totalItems > currentPageSize
+        ? `Showing ${(currentPage - 1) * currentPageSize + 1}–${Math.min(currentPage * currentPageSize, totalItems)} of ${totalItems} matching activit${totalItems === 1 ? "y" : "ies"}.`
+        : `Found ${totalItems} matching activit${totalItems === 1 ? "y" : "ies"}.`)
+    : (totalItems > currentPageSize
+        ? `Showing ${(currentPage - 1) * currentPageSize + 1}–${Math.min(currentPage * currentPageSize, totalItems)} of ${totalItems} activit${totalItems === 1 ? "y" : "ies"}.`
+        : `Found ${totalItems} activit${totalItems === 1 ? "y" : "ies"}.`);
 
   return {
     summary,
@@ -1211,9 +1241,10 @@ function formatAnalysisActivityList(
       data: {
         items,
         columns,
-        totalItems: count,
-        page: 1,
-        pageSize: 10,
+        totalItems,
+        page: currentPage,
+        pageSize: currentPageSize,
+        paginationOptionId: option.id,
       },
     }],
     followUpOptionIds: option.follow_up_option_ids,
