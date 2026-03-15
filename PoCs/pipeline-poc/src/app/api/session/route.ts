@@ -78,20 +78,20 @@ export async function GET() {
       }
     }
 
-    const featureFlags = session?.tenantId
-      ? await loadEnabledFlags(session.tenantId)
-      : [];
-
-    let tenantName: string | null = null;
-    if (session?.tenantId) {
-      const db = createServiceSupabase();
-      const { data } = await db
-        .from("tenants")
-        .select("name")
-        .eq("id", session.tenantId)
-        .single();
-      tenantName = data?.name ?? null;
-    }
+    const [featureFlags, tenantName] = session?.tenantId
+      ? await Promise.all([
+          loadEnabledFlags(session.tenantId),
+          (async () => {
+            const db = createServiceSupabase();
+            const { data } = await db
+              .from("tenants")
+              .select("name")
+              .eq("id", session.tenantId)
+              .single();
+            return data?.name ?? null;
+          })(),
+        ])
+      : [[], null];
 
     return NextResponse.json({
       user: session,

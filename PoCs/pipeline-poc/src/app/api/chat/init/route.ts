@@ -223,7 +223,7 @@ export async function POST(request: Request) {
     const skipAnnouncementsAndInfoCards = ["worker", "representative", "candidate", "system_admin"].includes(session.userType ?? "");
 
     let announcements: unknown[] = [];
-    let infoCards: unknown[] = [];
+    let infoCards: { title: string; content: unknown }[] = [];
 
     if (!skipAnnouncementsAndInfoCards) {
       const [announcementsRes, infoCardsRes] = await Promise.all([
@@ -247,12 +247,12 @@ export async function POST(request: Request) {
           .limit(10),
       ]);
       announcements = announcementsRes.data ?? [];
-      infoCards = infoCardsRes.data ?? [];
+      infoCards = (infoCardsRes.data ?? []) as { title: string; content: unknown }[];
     }
 
     const initWidgets: Widget[] = [];
 
-    if (!skipAnnouncementsAndInfoCards && announcements.length > 0) {
+    /*if (!skipAnnouncementsAndInfoCards && announcements.length > 0) {
       initWidgets.push({
         id: generateId(),
         type: "text_response",
@@ -265,7 +265,7 @@ export async function POST(request: Request) {
         },
         bookmarkable: false,
       });
-    }
+    }*/
 
     if (!skipAnnouncementsAndInfoCards && infoCards.length > 0) {
       for (const card of infoCards) {

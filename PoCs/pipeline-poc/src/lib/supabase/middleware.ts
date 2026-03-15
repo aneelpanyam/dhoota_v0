@@ -57,8 +57,9 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = path.startsWith("/login") || path.startsWith("/verify");
   const isPreAuthApi = path.startsWith("/api/auth/validate-access");
+  const isStaticAsset = path === "/icon.png" || path === "/apple-icon.png" || path === "/favicon.ico";
 
-  if (!user && !isAuthRoute && !isPreAuthApi) {
+  if (!user && !isAuthRoute && !isPreAuthApi && !isStaticAsset) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

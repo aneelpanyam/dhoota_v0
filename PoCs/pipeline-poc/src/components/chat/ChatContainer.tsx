@@ -46,8 +46,8 @@ export function ChatContainer() {
     router.push("/login");
   }, [router]);
 
-  const isPublic = sessionContext?.publicMode ?? false;
   const sessionLoaded = sessionContext !== null;
+  const isPublic = sessionContext?.publicMode ?? false;
   const { recordActivity } = useSessionTimeout({
     onTimeout: handleSessionTimeout,
     enabled: sessionLoaded && !isPublic,
@@ -131,20 +131,11 @@ export function ChatContainer() {
     return map;
   }, [chat.messages]);
 
-  if (!sessionLoaded) {
-    return (
-      <div className="flex h-screen w-full bg-background items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const showSidebar = sessionLoaded && !isPublic;
 
   return (
     <div className="flex h-screen w-full bg-background">
-      {!isPublic && (
+      {showSidebar && (
         <ConversationSidebar
           userDisplayName={chat.userDisplayName}
           conversations={chat.conversations}
@@ -157,8 +148,8 @@ export function ChatContainer() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header
-          className={`h-14 border-b flex items-center shrink-0 gap-1 ${
-            isPublic ? "px-6" : "px-6 pl-14 md:pl-6"
+          className={`h-14 border-b flex items-center shrink-0 gap-3 ${
+            showSidebar ? "px-6 pl-14 md:pl-6" : "px-6"
           }`}
         >
           <div className="w-10 h-10 shrink-0 rounded overflow-hidden flex items-center justify-center">
@@ -191,7 +182,7 @@ export function ChatContainer() {
         </header>
 
         {/* System admin warning banner */}
-        {!isPublic && sessionContext?.user?.userType === "system_admin" && (
+        {showSidebar && sessionContext?.user?.userType === "system_admin" && (
           <div className="px-6 pl-14 md:pl-6 pt-2 shrink-0">
             <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 text-sm flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -208,6 +199,36 @@ export function ChatContainer() {
         )}
 
         {/* Messages */}
+        {chat.messages.length === 0 && chat.isLoading ? (
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            <div className="mx-auto max-w-2xl space-y-4">
+              <div className="flex gap-3">
+                <div className="h-8 w-8 shrink-0 rounded-full bg-muted animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-48 rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-full rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-2/3 rounded bg-muted animate-pulse" />
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <div className="flex-1 max-w-xs" />
+                <div className="space-y-2 w-48">
+                  <div className="h-4 w-full rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="h-8 w-8 shrink-0 rounded-full bg-muted animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-56 rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-full rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-full rounded bg-muted animate-pulse" />
+                  <div className="h-4 w-2/3 rounded bg-muted animate-pulse" />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <MessageList
           messages={chat.messages}
           isLoading={chat.isLoading}
@@ -258,6 +279,7 @@ export function ChatContainer() {
           onCancel={() => chat.cancelAction()}
           onPinToContext={handlePinToContext}
         />
+        )}
 
         {/* Input */}
         <ChatInput

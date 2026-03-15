@@ -27,7 +27,7 @@ export function normalizeParams(
   schema: Record<string, unknown> | null | undefined
 ): Record<string, unknown> {
   if (!schema || typeof schema !== "object") return params;
-  const props = schema.properties as Record<string, { type?: string; enum?: unknown[]; items?: Record<string, unknown> }> | undefined;
+  const props = schema.properties as Record<string, { type?: string; format?: string; enum?: unknown[]; items?: Record<string, unknown> }> | undefined;
   if (!props || typeof props !== "object") return params;
   const required = (schema.required as string[] | undefined) ?? [];
 

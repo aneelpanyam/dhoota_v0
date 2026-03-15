@@ -63,6 +63,16 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <div className="w-14 h-14 shrink-0 rounded overflow-hidden flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/icon.png"
+                  alt=""
+                  className="w-20 h-20 object-cover"
+                />
+              </div>
+            </div>
             <h1 className="text-3xl font-bold text-gray-900">Dhoota</h1>
             <p className="text-muted-foreground mt-2">
               Sign in with your access code
