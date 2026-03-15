@@ -4,7 +4,7 @@ import Markdown from "react-markdown";
 import { Globe } from "lucide-react";
 import type { Widget, WidgetAction } from "@/types/api";
 import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
-import { getCardPresetClasses } from "@/lib/theme-presets";
+import { getCardPresetClasses, getWidgetBorderStyle } from "@/lib/theme-presets";
 
 interface Props {
   widget: Widget;
@@ -32,7 +32,7 @@ export function WelcomeMessageWidget({
   );
 
   return (
-    <article className={`overflow-hidden rounded-xl ${cardClass}`} style={cardStyle}>
+    <article className={`overflow-hidden rounded-xl ${cardClass}`} style={{ ...cardStyle, ...getWidgetBorderStyle(themeOverrides?.headerPreset) }}>
       {bannerImageUrl && (
         <div className="aspect-video md:aspect-[6/1] w-full overflow-hidden bg-muted">
           <img

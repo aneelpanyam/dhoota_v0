@@ -5,7 +5,7 @@ import { User } from "lucide-react";
 import type { Widget, WidgetAction, OptionReference } from "@/types/api";
 import { HeaderActionStrip } from "./HeaderActionStrip";
 import { usePublicTheme } from "@/lib/contexts/PublicThemeContext";
-import { getCardPresetClasses } from "@/lib/theme-presets";
+import { getCardPresetClasses, getWidgetBorderStyle } from "@/lib/theme-presets";
 
 interface Props {
   widget: Widget;
@@ -30,7 +30,7 @@ export function PublicProfileWidget({ widget, onOptionSelect, headerActions }: P
   const hasFooter = headerActions && headerActions.length > 0 && onOptionSelect;
 
   return (
-    <div className={`rounded-xl overflow-hidden ${cardClass}`} style={cardStyle}>
+    <div className={`rounded-xl overflow-hidden ${cardClass}`} style={{ ...cardStyle, ...getWidgetBorderStyle(themeOverrides?.headerPreset) }}>
       <div className="flex flex-col sm:flex-row gap-4 p-4">
         <div className="flex shrink-0 justify-center sm:justify-start">
           {avatarUrl ? (
