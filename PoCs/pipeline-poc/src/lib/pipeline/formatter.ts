@@ -687,10 +687,19 @@ function formatPublicAbout(
   let welcomeMessage = (row.welcome_message as string) ?? "";
   // Convert literal \r\n to actual newlines for proper rendering
   welcomeMessage = welcomeMessage.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
-  const text = `## ${displayName}\n\n${welcomeMessage}`;
+  const avatarUrlRaw = row.avatar_url as string | null | undefined;
+  const avatarUrl =
+    avatarUrlRaw && avatarUrlRaw.trim()
+      ? avatarUrlRaw.startsWith("http")
+        ? avatarUrlRaw
+        : `/api/media/serve?key=${encodeURIComponent(avatarUrlRaw)}`
+      : undefined;
   return {
-    summary: `About ${displayName}`,
-    widgets: [{ type: "text_response", data: { text } }],
+    summary: "About me",
+    widgets: [{
+      type: "public_profile",
+      data: { displayName, welcomeMessage, avatarUrl },
+    }],
     followUpOptionIds: option.follow_up_option_ids,
   };
 }

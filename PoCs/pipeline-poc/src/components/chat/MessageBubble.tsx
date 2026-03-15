@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 import type { WidgetAction, ChatMessageResponse, OptionReference, Widget } from "@/types/api";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, Bookmark, Sparkles } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
 import { getOptionIcon } from "@/lib/icons/option-icons";
+import { getOptionDisplayName } from "@/lib/options/display-names";
 
 function splitIntoWidgetGroups(widgets: Widget[]): { type: "welcome_messages" | "single"; widgets: Widget[] }[] {
   const groups: { type: "welcome_messages" | "single"; widgets: Widget[] }[] = [];
@@ -32,6 +33,7 @@ interface MessageBubbleProps {
   isLastMessage?: boolean;
   isHidden?: boolean;
   isBookmarked?: boolean;
+  isPublicMode?: boolean;
   representativeAvatarUrl?: string | null;
   onAction: (action: WidgetAction) => void;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
@@ -53,6 +55,7 @@ export function MessageBubble({
   isLastMessage,
   isHidden,
   isBookmarked,
+  isPublicMode = false,
   representativeAvatarUrl,
   onAction,
   onOptionSelect,
@@ -65,29 +68,49 @@ export function MessageBubble({
   onToggleBookmark,
 }: MessageBubbleProps) {
   const [showCollapsed, setShowCollapsed] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const hideToggle = isHidden ? (
-    <button
-      onClick={onUnhide}
-      className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:bg-muted"
-      title="Unhide message"
-    >
-      <Eye className="h-3 w-3 text-muted-foreground" />
-    </button>
-  ) : (
-    <button
-      onClick={onHide}
-      className="opacity-0 group-hover/msg:opacity-100 transition p-1 rounded hover:bg-muted"
-      title="Hide message"
-    >
-      <X className="h-3 w-3 text-muted-foreground" />
-    </button>
-  );
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowActions(false);
+      }
+    };
+    if (showActions) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showActions]);
+
+  const hideToggle = showActions ? (
+    isHidden ? (
+      <button
+        onClick={onUnhide}
+        className="transition p-1 rounded hover:bg-muted"
+        title="Unhide message"
+      >
+        <Eye className="h-3 w-3 text-muted-foreground" />
+      </button>
+    ) : (
+      <button
+        onClick={onHide}
+        className="transition p-1 rounded hover:bg-muted"
+        title="Hide message"
+      >
+        <X className="h-3 w-3 text-muted-foreground" />
+      </button>
+    )
+  ) : null;
 
   if (message.role === "user") {
     const hasContext = message.contextItems && message.contextItems.length > 0;
-    return (
-      <div className="group/msg flex items-start gap-3 justify-end">
+  return (
+    <div
+      ref={containerRef}
+      onClick={() => setShowActions(true)}
+      className="group/msg flex items-start gap-3 justify-end cursor-pointer"
+    >
         <div className="flex items-start gap-1 shrink-0 pt-1">
           {hideToggle}
         </div>
@@ -156,19 +179,26 @@ export function MessageBubble({
       </div>
     );
 
-  const avatarWrapperClass = representativeAvatarUrl
-    ? "flex shrink-0"
-    : "hidden md:flex shrink-0";
+  const avatarWrapperClass = isPublicMode
+    ? "hidden"
+    : representativeAvatarUrl
+      ? "flex shrink-0"
+      : "hidden md:flex shrink-0";
 
   const hasDataList = response.widgets.some((w) => w.type === "data_list");
   const hasStatsWidget =
     response.widgets.some((w) => w.type === "stats_grid") ||
     response.widgets.some((w) => w.type === "stats_card");
+  const hasPublicProfile = response.widgets.some((w) => w.type === "public_profile");
   const followUpsInHeader =
-    (hasDataList || hasStatsWidget) && response.followUps.length > 0;
+    (hasDataList || hasStatsWidget || hasPublicProfile) && response.followUps.length > 0;
 
   return (
-    <div className="group/msg flex items-start gap-3">
+    <div
+      ref={containerRef}
+      onClick={() => setShowActions(true)}
+      className="group/msg flex items-start gap-3 relative cursor-pointer"
+    >
       <div className={avatarWrapperClass}>{avatarEl}</div>
       <div className="flex-1 min-w-0 space-y-3">
         {/* Collapsed conversation toggle */}
@@ -196,10 +226,15 @@ export function MessageBubble({
         {(() => {
           const widgets = response.widgets;
           const groups = splitIntoWidgetGroups(widgets);
-          const injectAvatar = (w: Widget) =>
-            w.type === "welcome_message"
-              ? { ...w, data: { ...w.data, representativeAvatarUrl: representativeAvatarUrl ?? undefined } }
-              : w;
+          const injectAvatar = (w: Widget) => {
+            if (w.type === "welcome_message") {
+              return { ...w, data: { ...w.data, representativeAvatarUrl: representativeAvatarUrl ?? undefined } };
+            }
+            if (w.type === "public_profile" && representativeAvatarUrl && !(w.data?.avatarUrl as string | undefined)) {
+              return { ...w, data: { ...w.data, avatarUrl: representativeAvatarUrl } };
+            }
+            return w;
+          };
           const headerActions = followUpsInHeader ? response.followUps : undefined;
           return groups.map((group, i) =>
             group.type === "welcome_messages" && group.widgets.length > 1 ? (
@@ -241,18 +276,17 @@ export function MessageBubble({
           isLastMessage={!!isLastMessage}
           onOptionSelect={onOptionSelect}
           hideFollowUps={followUpsInHeader}
+          isPublicMode={isPublicMode}
         />
 
         {response.traceId && <TraceIdBadge traceId={response.traceId} />}
       </div>
-      <div className="flex items-start gap-0.5 pt-1 shrink-0">
-        {onToggleBookmark && (
+      <div className="absolute right-0 top-1 md:relative md:top-0 flex items-start gap-0.5 pt-1 shrink-0 z-10">
+        {showActions && onToggleBookmark && (
           <button
             onClick={onToggleBookmark}
             className={`transition p-1 rounded hover:bg-muted ${
-              isBookmarked
-                ? "text-primary"
-                : "opacity-0 group-hover/msg:opacity-100 text-muted-foreground"
+              isBookmarked ? "text-primary" : "text-muted-foreground"
             }`}
             title={isBookmarked ? "Remove bookmark" : "Bookmark message"}
           >
@@ -296,7 +330,7 @@ function MobileActionButton({
     <div className="relative">
       <button
         onClick={handleClick}
-        className={`${baseClass} ${variantClass} ${pressed ? "bg-primary/10 ring-1 ring-primary/30" : ""}`}
+        className={`${baseClass} ${variantClass} ${pressed ? "bg-primary/10 ring-1 ring-primary/30 relative z-[60]" : ""}`}
         title={label}
         aria-label={label}
       >
@@ -305,11 +339,11 @@ function MobileActionButton({
       {pressed && (
         <>
           <div
-            className="fixed inset-0 z-30"
+            className="fixed inset-0 z-[45] bg-black/30"
             aria-hidden
             onClick={() => setPressed(false)}
           />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs font-medium whitespace-nowrap z-40">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-background border shadow-lg text-xs font-medium whitespace-nowrap z-[55]">
             {label}
             <span className="block text-[10px] text-muted-foreground font-normal mt-0.5">Tap again to run</span>
           </div>
@@ -324,15 +358,18 @@ function NextActionsSection({
   isLastMessage,
   onOptionSelect,
   hideFollowUps = false,
+  isPublicMode = false,
 }: {
   response: ChatMessageResponse;
   isLastMessage: boolean;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   hideFollowUps?: boolean;
+  isPublicMode?: boolean;
 }) {
   const [showOtherOptions, setShowOtherOptions] = useState(false);
 
   const canShowDefaultOptions =
+    !isPublicMode &&
     isLastMessage &&
     response.conversationState === "active" &&
     response.defaultOptions.length > 0 &&
@@ -401,7 +438,7 @@ function NextActionsSection({
                 }
                 className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition"
               >
-                {fu.name}
+                {getOptionDisplayName(fu.optionId, fu.name)}
               </button>
             );
           })}
@@ -412,7 +449,7 @@ function NextActionsSection({
               onClick={() => onOptionSelect(opt.optionId, opt.params)}
               className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
             >
-              {opt.name}
+              {getOptionDisplayName(opt.optionId, opt.name)}
             </button>
           ))}
         {showOtherOptionsTrigger && (
@@ -433,7 +470,7 @@ function NextActionsSection({
                     onClick={() => onOptionSelect(opt.optionId, opt.params)}
                     className="text-xs px-3 py-1.5 rounded-full border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition"
                   >
-                    {opt.name}
+                    {getOptionDisplayName(opt.optionId, opt.name)}
                   </button>
                 ))}
                 <button
@@ -493,7 +530,7 @@ function NextActionsSection({
                   <MobileActionButton
                     key={fu.optionId}
                     actionId={fu.optionId}
-                    label={fu.name}
+                    label={getOptionDisplayName(fu.optionId, fu.name)}
                     Icon={Icon}
                     onSelect={() =>
                       onOptionSelect(fu.optionId, {
@@ -512,7 +549,7 @@ function NextActionsSection({
                   <MobileActionButton
                     key={opt.optionId}
                     actionId={opt.optionId}
-                    label={opt.name}
+                    label={getOptionDisplayName(opt.optionId, opt.name)}
                     Icon={Icon}
                     onSelect={() => onOptionSelect(opt.optionId, opt.params)}
                     variant="default"

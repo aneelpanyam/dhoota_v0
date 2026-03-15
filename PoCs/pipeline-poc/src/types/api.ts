@@ -114,4 +114,5 @@ export type WidgetType =
   | "report_view"
   | "info_card"
   | "announcement_card"
-  | "welcome_message";
+  | "welcome_message"
+  | "public_profile";

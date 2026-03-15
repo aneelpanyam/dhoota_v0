@@ -131,14 +131,6 @@ export async function processMessage(
       );
 
       const widgets: Widget[] = [];
-      if (entityCtx) {
-        widgets.push({
-          id: generateId(),
-          type: "text_response" as WidgetType,
-          data: { text: `**${resolved.option!.name}** for: *${entityCtx.title}*${entityCtx.subtitle ? ` (${entityCtx.subtitle})` : ""}` },
-          bookmarkable: false,
-        });
-      }
       widgets.push({
         id: generateId(),
         type: "question_stepper" as WidgetType,

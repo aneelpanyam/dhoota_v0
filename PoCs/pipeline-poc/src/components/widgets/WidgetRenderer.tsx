@@ -22,6 +22,7 @@ import { TimelineWidget } from "./TimelineWidget";
 import { InfoCardWidget } from "./InfoCardWidget";
 import { AnnouncementCardWidget } from "./AnnouncementCardWidget";
 import { WelcomeMessageWidget } from "./WelcomeMessageWidget";
+import { PublicProfileWidget } from "./PublicProfileWidget";
 
 export interface WidgetRendererProps {
   widget: Widget;
@@ -65,6 +66,7 @@ const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = 
   info_card: InfoCardWidget,
   announcement_card: AnnouncementCardWidget,
   welcome_message: WelcomeMessageWidget,
+  public_profile: PublicProfileWidget,
 };
 
 export function WidgetRenderer(props: WidgetRendererProps) {

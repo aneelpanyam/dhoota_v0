@@ -15,6 +15,7 @@ interface OptionsStripProps {
   defaultOptions: OptionReference[];
   isPublicMode: boolean;
   featureFlags?: string[];
+  representativeAvatarUrl?: string | null;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
   contextFilters?: { id: string; name: string }[];
@@ -24,6 +25,7 @@ export function OptionsStrip({
   defaultOptions,
   isPublicMode,
   featureFlags = [],
+  representativeAvatarUrl,
   onOptionSelect,
   onExplore,
   contextFilters = [],
@@ -86,18 +88,29 @@ export function OptionsStrip({
         <span className="hidden md:inline text-sm font-medium">Explore</span>
       </button>
 
-      {topActions.map(({ optionId, label, Icon }) => (
-        <button
-          key={optionId}
-          onClick={() => onOptionSelect(optionId)}
-          className="flex items-center gap-2 shrink-0 p-2 md:px-3 md:py-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
-          title={label}
-          aria-label={label}
-        >
-          <Icon className="h-4 w-4 text-primary" />
-          <span className="hidden md:inline text-sm font-medium">{label}</span>
-        </button>
-      ))}
+      {topActions.map(({ optionId, label, Icon }) => {
+        const showAvatar = isPublicMode && optionId === "public.about" && representativeAvatarUrl;
+        return (
+          <button
+            key={optionId}
+            onClick={() => onOptionSelect(optionId)}
+            className="flex items-center gap-2 shrink-0 p-2 md:px-3 md:py-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
+            title={label}
+            aria-label={label}
+          >
+            {showAvatar ? (
+              <img
+                src={representativeAvatarUrl}
+                alt=""
+                className="h-4 w-4 rounded-full object-cover shrink-0"
+              />
+            ) : (
+              <Icon className="h-4 w-4 text-primary" />
+            )}
+            <span className="hidden md:inline text-sm font-medium">{label}</span>
+          </button>
+        );
+      })}
 
       {moreOptions.length > 0 && (
         <div ref={moreRef} className="relative shrink-0">
@@ -132,6 +145,7 @@ export function OptionsStrip({
                 <div className="py-1 bg-background">
                   {moreOptions.map((opt) => {
                     const Icon = getOptionIcon(opt.icon);
+                    const showAvatar = isPublicMode && opt.optionId === "public.about" && representativeAvatarUrl;
                     return (
                       <button
                         key={opt.optionId}
@@ -141,7 +155,15 @@ export function OptionsStrip({
                         }}
                         className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted transition"
                       >
-                        <Icon className="h-4 w-4 text-primary shrink-0" />
+                        {showAvatar ? (
+                          <img
+                            src={representativeAvatarUrl}
+                            alt=""
+                            className="h-4 w-4 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <Icon className="h-4 w-4 text-primary shrink-0" />
+                        )}
                         <span>{opt.name}</span>
                       </button>
                     );

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { formatValueForDisplay } from "@/lib/display-format";
+import { getOptionDisplayName } from "@/lib/options/display-names";
 import type {
   ChatMessageResponse,
   SendMessageRequest,
@@ -735,18 +736,18 @@ function deriveUserContent(
   request: Omit<import("@/types/api").SendMessageRequest, "conversationId">
 ): string | null {
   if (request.source === "default_option" && request.optionId) {
-    const label = request.optionId
+    const fallback = request.optionId
       .replace(/^activity\./, "")
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
-    return label;
+    return getOptionDisplayName(request.optionId, fallback);
   }
   if (request.source === "inline_action" && request.optionId) {
-    const label = request.optionId
+    const fallback = request.optionId
       .replace(/^activity\./, "")
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
-    return label;
+    return getOptionDisplayName(request.optionId, fallback);
   }
   if (request.source === "qa_response" && request.params) {
     const parts: string[] = [];

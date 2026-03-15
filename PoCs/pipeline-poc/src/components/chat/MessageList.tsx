@@ -14,6 +14,7 @@ interface MessageListProps {
   optionLoadingMessages?: Record<string, string>;
   conversationId?: string | null;
   bookmarksEnabled?: boolean;
+  isPublicMode?: boolean;
   representativeAvatarUrl?: string | null;
   onAction: (action: WidgetAction) => void;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
@@ -50,6 +51,7 @@ export function MessageList({
   optionLoadingMessages,
   conversationId,
   bookmarksEnabled,
+  isPublicMode = false,
   representativeAvatarUrl,
   onAction,
   onOptionSelect,
@@ -198,6 +200,7 @@ export function MessageList({
             <div key={message.id} className={isHidden ? "opacity-40" : ""}>
               <MessageBubble
                 message={message}
+                isPublicMode={isPublicMode}
                 representativeAvatarUrl={representativeAvatarUrl}
                 isLastMessage={!showHidden && idx === visibleMessages.length - 1}
                 isHidden={isHidden}

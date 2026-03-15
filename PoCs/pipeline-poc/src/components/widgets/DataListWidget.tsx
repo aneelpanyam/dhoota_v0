@@ -22,6 +22,7 @@ import { ActivityTimelineView } from "./ActivityTimelineView";
 import { ActivityStatsBar } from "./ActivityStatsBar";
 import { useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { getOptionIcon, isValidOptionIcon } from "@/lib/icons/option-icons";
+import { getOptionDisplayName } from "@/lib/options/display-names";
 
 type ActivityViewMode = "list" | "calendar" | "timeline" | "stats";
 
@@ -148,25 +149,26 @@ function HeaderActionButton({
     }
   };
 
+  const displayName = getOptionDisplayName(opt.optionId, opt.name);
   return (
     <div className="relative">
       <button
         onClick={handleClick}
-        className={`p-1.5 rounded-lg transition ${isPressed ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground hover:text-primary"}`}
-        title={opt.name}
-        aria-label={opt.name}
+        className={`p-1.5 rounded-lg transition ${isPressed ? "bg-primary/10 text-primary relative z-[60]" : "hover:bg-muted text-muted-foreground hover:text-primary"}`}
+        title={displayName}
+        aria-label={displayName}
       >
         <Icon className="h-4 w-4" />
       </button>
       {isPressed && (
         <>
           <div
-            className="fixed inset-0 z-30"
+            className="fixed inset-0 z-[45] bg-black/30"
             aria-hidden
             onClick={() => onActionPress(null)}
           />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs font-medium whitespace-nowrap z-40">
-            {opt.name}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-background border shadow-lg text-xs font-medium whitespace-nowrap z-[55]">
+            {displayName}
             <span className="block text-[10px] text-muted-foreground font-normal mt-0.5">Tap again to run</span>
           </div>
         </>

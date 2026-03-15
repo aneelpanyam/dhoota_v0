@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Widget, WidgetAction } from "@/types/api";
 import { QuestionCardWidget } from "./QuestionCardWidget";
 import { ChevronLeft } from "lucide-react";
+import { getOptionDisplayName, getOptionHeaderGuidance } from "@/lib/options/display-names";
 
 interface QuestionData {
   questionText: string;
@@ -85,22 +86,31 @@ export function QuestionStepperWidget({
     }
   };
 
+  const optionDisplayName = getOptionDisplayName(
+    optionId,
+    optionId.replace(/^[^.]+\./, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+  const headerGuidance = getOptionHeaderGuidance(optionId, optionDisplayName);
+
   return (
     <div className="space-y-3">
-      {questions.length > 1 && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {!isFirstQuestion && (
-            <button
-              onClick={() => setCurrentIndex((prev) => prev - 1)}
-              className="flex items-center gap-1 hover:text-foreground transition"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back
-            </button>
-          )}
-          <span className="ml-auto">
+      <div className="flex items-center gap-2 text-sm pr-10 md:pr-0">
+        <h3 className="font-semibold text-foreground">{headerGuidance}</h3>
+        {questions.length > 1 ? (
+          <span className="text-muted-foreground ml-auto">
             Question {currentIndex + 1} of {questions.length}
           </span>
+        ) : null}
+      </div>
+      {questions.length > 1 && !isFirstQuestion && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground pr-10 md:pr-0">
+          <button
+            onClick={() => setCurrentIndex((prev) => prev - 1)}
+            className="flex items-center gap-2 hover:text-foreground transition shrink-0"
+          >
+            <ChevronLeft className="h-4 w-4 shrink-0" />
+            <span>Back</span>
+          </button>
         </div>
       )}
       <QuestionCardWidget

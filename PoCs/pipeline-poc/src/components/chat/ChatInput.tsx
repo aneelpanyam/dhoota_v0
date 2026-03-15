@@ -32,6 +32,7 @@ interface ChatInputProps {
   onFilterSelect?: (filterId: string) => void;
   onClearFilter?: () => void;
   defaultOptions?: OptionReference[];
+  representativeAvatarUrl?: string | null;
   onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
   featureFlags?: string[];
 }
@@ -61,6 +62,7 @@ export function ChatInput({
   onFilterSelect,
   onClearFilter,
   defaultOptions = [],
+  representativeAvatarUrl,
   onOptionSelect,
   featureFlags = [],
 }: ChatInputProps) {
@@ -80,12 +82,11 @@ export function ChatInput({
   const isInsightsMode = hasContext || hasFilter;
 
   // Auto-expand when user pins items, selects a filter, or needs to respond
-  // Auto-collapse when back to active (e.g. after option execution) so Explore strip doesn't stay open
+  // Do NOT auto-collapse when back to active: that would shrink the input and make the explore strip
+  // pop into view on mobile. User can manually tap "Collapse" if desired.
   useEffect(() => {
     if (isInsightsMode || conversationState !== "active") {
       setIsExpanded(true);
-    } else {
-      setIsExpanded(false);
     }
   }, [isInsightsMode, conversationState]);
 
@@ -194,7 +195,8 @@ export function ChatInput({
     <div className="border-t bg-background shrink-0">
       {isExpanded ? (
         <>
-          {/* Context strip for insights mode */}
+          {/* Context strip for insights mode - hide during option flows (Q&A, confirmation) */}
+          {conversationState === "active" && (
           <ContextStrip
             items={contextItems}
             onRemove={onRemoveContext}
@@ -207,6 +209,7 @@ export function ChatInput({
             onGenerateReport={onSendReport}
             isLoading={isLoading}
           />
+          )}
 
           <div className="p-4">
             <div className="mx-auto">
@@ -319,6 +322,7 @@ export function ChatInput({
               defaultOptions={defaultOptions}
               isPublicMode={isPublicMode ?? false}
               featureFlags={featureFlags}
+              representativeAvatarUrl={representativeAvatarUrl}
               onOptionSelect={(optionId, params) => onOptionSelect?.(optionId, params)}
               onExplore={() => setIsExpanded(true)}
               contextFilters={contextFilters}

@@ -22,6 +22,7 @@ interface MobileBottomNavProps {
   defaultOptions: OptionReference[];
   isPublicMode: boolean;
   featureFlags?: string[];
+  representativeAvatarUrl?: string | null;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
 }
@@ -30,6 +31,7 @@ export function MobileBottomNav({
   defaultOptions,
   isPublicMode,
   featureFlags = [],
+  representativeAvatarUrl,
   onOptionSelect,
   onExplore,
 }: MobileBottomNavProps) {
@@ -61,7 +63,8 @@ export function MobileBottomNav({
     (o) => !tenantTopActions.some((t) => t.optionId === o.optionId)
   );
 
-  const publicTopCount = 3;
+  // Show all public options as icons in the bottom strip (no More) for a clean nav
+  const publicTopCount = defaultOptions.length;
   const publicTopOptions = defaultOptions.slice(0, publicTopCount);
   const publicMoreOptions = defaultOptions.slice(publicTopCount);
 
@@ -85,12 +88,14 @@ export function MobileBottomNav({
     icon: Icon,
     label,
     ariaLabel,
+    avatarUrl,
   }: {
     actionId: string;
     onSelect: () => void;
     icon: React.ComponentType<{ className?: string }>;
     label?: string;
     ariaLabel: string;
+    avatarUrl?: string | null;
   }) => {
     const isPressed = pressedActionId === actionId;
     const handleClick = () => {
@@ -105,10 +110,14 @@ export function MobileBottomNav({
       <div className="relative flex flex-col items-center flex-1 min-w-0">
         <button
           onClick={handleClick}
-          className={`flex flex-col items-center justify-center gap-0.5 py-2 px-3 min-w-0 flex-1 w-full text-muted-foreground hover:text-foreground transition ${isPressed ? "text-primary" : ""}`}
+          className={`flex flex-col items-center justify-center gap-0.5 py-2 px-3 min-w-0 flex-1 w-full text-muted-foreground hover:text-foreground transition ${isPressed ? "text-primary relative z-[60]" : ""}`}
           aria-label={ariaLabel}
         >
-          <Icon className="h-5 w-5 shrink-0" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover shrink-0" />
+          ) : (
+            <Icon className="h-5 w-5 shrink-0" />
+          )}
           {label && !isPressed && (
             <span className="hidden md:inline text-[10px] truncate max-w-full">{label}</span>
           )}
@@ -116,11 +125,11 @@ export function MobileBottomNav({
         {isPressed && (
           <>
             <div
-              className="fixed inset-0 z-30"
+              className="fixed inset-0 z-[45] bg-black/30"
               aria-hidden
               onClick={() => setPressedActionId(null)}
             />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs font-medium whitespace-nowrap z-40">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-background border shadow-lg text-xs font-medium whitespace-nowrap z-[55]">
               {label ?? ariaLabel}
               <span className="block text-[10px] text-muted-foreground font-normal mt-0.5">Tap again to run</span>
             </div>
@@ -152,6 +161,7 @@ export function MobileBottomNav({
             icon={Icon}
             label={label}
             ariaLabel={label}
+            avatarUrl={isPublicMode && optionId === "public.about" ? representativeAvatarUrl : undefined}
           />
         ))}
 
@@ -188,6 +198,7 @@ export function MobileBottomNav({
                   <div className="py-1 bg-background">
                     {moreOptions.map((opt) => {
                       const Icon = getOptionIcon(opt.icon);
+                      const showAvatar = isPublicMode && opt.optionId === "public.about" && representativeAvatarUrl;
                       return (
                         <button
                           key={opt.optionId}
@@ -197,7 +208,15 @@ export function MobileBottomNav({
                           }}
                           className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted transition"
                         >
-                          <Icon className="h-4 w-4 text-primary shrink-0" />
+                          {showAvatar ? (
+                            <img
+                              src={representativeAvatarUrl}
+                              alt=""
+                              className="h-4 w-4 rounded-full object-cover shrink-0"
+                            />
+                          ) : (
+                            <Icon className="h-4 w-4 text-primary shrink-0" />
+                          )}
                           <span>{opt.name}</span>
                         </button>
                       );

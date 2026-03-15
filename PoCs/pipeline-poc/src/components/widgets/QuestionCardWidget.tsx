@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { Widget, WidgetAction, FileReference } from "@/types/api";
-import { Send, X, Upload, FileIcon, FileText, Plus, Trash2, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Send, X, Upload, FileIcon, Plus, Trash2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { RichMarkdownEditor } from "@/components/ui/RichMarkdownEditor";
 import { isValidEmail, validateAccessCodeStrength, validateByParamSchema } from "@/lib/validation";
 
@@ -26,13 +26,6 @@ interface Props {
   onCancel: () => void;
 }
 
-interface EntityContextData {
-  entityType: string;
-  entityId: string;
-  title: string;
-  subtitle?: string;
-}
-
 interface DynamicOption {
   value: string;
   label: string;
@@ -47,7 +40,6 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
   const isRequired = (d.isRequired as boolean) ?? true;
   const optionId = d.optionId as string;
   const sessionParams = (d.sessionParams as Record<string, unknown>) ?? {};
-  const entityContext = d.entityContext as EntityContextData | null | undefined;
   const currentAvatarUrl = d.currentAvatarUrl as string | undefined;
   const currentBannerUrl = d.currentBannerUrl as string | undefined;
   const paramSchema = d.paramSchema as Record<string, unknown> | undefined;
@@ -390,17 +382,6 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
-      {entityContext && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 -mx-0.5">
-          <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
-          <div className="min-w-0">
-            <span className="text-xs font-medium text-foreground truncate block">{entityContext.title}</span>
-            {entityContext.subtitle && (
-              <span className="text-[10px] text-muted-foreground">{entityContext.subtitle}</span>
-            )}
-          </div>
-        </div>
-      )}
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">{questionText}</p>
         <div className="flex items-center gap-2">
@@ -416,10 +397,10 @@ export function QuestionCardWidget({ widget, onQAResponse, onCancel }: Props) {
           <button
             type="button"
             onClick={onCancel}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition"
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-destructive transition"
           >
-            <X className="h-3 w-3" />
-            Cancel
+            <X className="h-3 w-3 shrink-0" />
+            <span>Cancel</span>
           </button>
         </div>
       </div>

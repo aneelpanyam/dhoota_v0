@@ -25,7 +25,7 @@ export function RichMarkdownEditor({
       <MDEditor
         value={value}
         onChange={(val) => onChange(val ?? "")}
-        preview="live"
+        preview="edit"
         hideToolbar={false}
         enableScroll={true}
         visibleDragbar={false}

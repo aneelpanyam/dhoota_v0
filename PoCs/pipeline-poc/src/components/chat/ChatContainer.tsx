@@ -238,6 +238,7 @@ export function ChatContainer() {
           optionLoadingMessages={optionLoadingMessages}
           conversationId={chat.conversationId}
           bookmarksEnabled={bookmarksEnabled}
+          isPublicMode={isPublic}
           representativeAvatarUrl={isPublic ? sessionContext?.publicSiteConfig?.representativeAvatarUrl ?? undefined : undefined}
           onAction={(action) => {
             recordActivity();
@@ -336,6 +337,7 @@ export function ChatContainer() {
             });
           }}
           defaultOptions={sessionLoaded ? chat.defaultOptions : []}
+          representativeAvatarUrl={isPublic ? sessionContext?.publicSiteConfig?.representativeAvatarUrl ?? undefined : undefined}
           onOptionSelect={(optionId, params) => {
             recordActivity();
             chat.sendMessage({
@@ -353,6 +355,7 @@ export function ChatContainer() {
           defaultOptions={chat.defaultOptions}
           isPublicMode={isPublic}
           featureFlags={sessionContext?.featureFlags ?? []}
+          representativeAvatarUrl={isPublic ? sessionContext?.publicSiteConfig?.representativeAvatarUrl ?? undefined : undefined}
           onOptionSelect={(optionId, params) => {
             recordActivity();
             chat.sendMessage({
