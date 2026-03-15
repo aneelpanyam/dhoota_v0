@@ -117,7 +117,7 @@ export function MobileBottomNav({
           aria-label={ariaLabel}
         >
           {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover shrink-0" />
+            <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
           ) : (
             <Icon className="h-5 w-5 shrink-0" />
           )}
