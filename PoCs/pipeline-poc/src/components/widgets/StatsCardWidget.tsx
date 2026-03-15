@@ -18,7 +18,7 @@ export function StatsCardWidget({ widget }: Props) {
   const d = widget.data;
   const themeOverrides = usePublicTheme();
   const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
-  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.widgetFgPreset ?? themeOverrides?.headerFgPreset);
   const label = (d.label as string) ?? "Stat";
   const value = d.value as string | number;
   const change = d.change as number | undefined;

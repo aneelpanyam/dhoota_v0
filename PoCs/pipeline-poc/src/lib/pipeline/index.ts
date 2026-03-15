@@ -828,6 +828,7 @@ function ensureThemeOverridesFromPresets(
   if (p.theme_info_card_preset != null) themeOverrides.infoCardPreset = p.theme_info_card_preset;
   if (p.theme_welcome_message_preset != null) themeOverrides.welcomeMessagePreset = p.theme_welcome_message_preset;
   if (p.theme_header_fg_preset != null) themeOverrides.headerFgPreset = p.theme_header_fg_preset;
+  if (p.theme_widget_fg_preset != null) themeOverrides.widgetFgPreset = p.theme_widget_fg_preset;
   if (p.theme_bottom_nav_fg_preset != null) themeOverrides.bottomNavFgPreset = p.theme_bottom_nav_fg_preset;
   if (p.theme_about_me_fg_preset != null) themeOverrides.aboutMeFgPreset = p.theme_about_me_fg_preset;
   if (p.theme_info_card_fg_preset != null) themeOverrides.infoCardFgPreset = p.theme_info_card_fg_preset;
@@ -1267,6 +1268,9 @@ async function enrichSessionParamsWithPublicSiteConfig(
       }
       if (merged.theme_header_fg_preset == null && themeOverrides.headerFgPreset != null) {
         merged.theme_header_fg_preset = themeOverrides.headerFgPreset;
+      }
+      if (merged.theme_widget_fg_preset == null && themeOverrides.widgetFgPreset != null) {
+        merged.theme_widget_fg_preset = themeOverrides.widgetFgPreset;
       }
       if (merged.theme_bottom_nav_fg_preset == null && themeOverrides.bottomNavFgPreset != null) {
         merged.theme_bottom_nav_fg_preset = themeOverrides.bottomNavFgPreset;

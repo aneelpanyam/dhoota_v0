@@ -59,7 +59,7 @@ export function StatsGridWidget({ widget, onOptionSelect, headerActions }: Props
   const stats = (widget.data?.stats as StatItem[] | undefined) ?? [];
   const themeOverrides = usePublicTheme();
   const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
-  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.widgetFgPreset ?? themeOverrides?.headerFgPreset);
 
   if (stats.length === 0) return null;
 

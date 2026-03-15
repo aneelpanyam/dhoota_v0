@@ -56,7 +56,7 @@ export function getWidgetBorderStyle(presetId: string | null | undefined): React
 
 /**
  * Returns text color style and inherit class for widgets when fg preset is set.
- * Use headerFgPreset for consistency with header/nav theme.
+ * Use widgetFgPreset for widget text; headerFgPreset is for header/nav bars only.
  */
 export function getWidgetFgStyle(presetId: string | null | undefined): {
   style?: React.CSSProperties;

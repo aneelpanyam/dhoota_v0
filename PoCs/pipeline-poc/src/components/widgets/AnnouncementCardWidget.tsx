@@ -22,7 +22,7 @@ export function AnnouncementCardWidget({ widget, onAction, onConfirm }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const themeOverrides = usePublicTheme();
   const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
-  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.widgetFgPreset ?? themeOverrides?.headerFgPreset);
   const d = widget.data;
   const title = (d.title as string) ?? "Untitled";
   const content = (d.content as string) ?? "";

@@ -9,6 +9,7 @@ export interface ThemeOverrides {
   infoCardPreset?: string;
   welcomeMessagePreset?: string;
   headerFgPreset?: string;
+  widgetFgPreset?: string;
   bottomNavFgPreset?: string;
   aboutMeFgPreset?: string;
   infoCardFgPreset?: string;

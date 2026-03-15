@@ -35,6 +35,7 @@ export function ChatContainer() {
         infoCardPreset?: string;
         welcomeMessagePreset?: string;
         headerFgPreset?: string;
+        widgetFgPreset?: string;
         bottomNavFgPreset?: string;
         aboutMeFgPreset?: string;
         infoCardFgPreset?: string;
@@ -369,6 +370,7 @@ export function ChatContainer() {
           }}
           featureFlags={sessionContext?.featureFlags ?? []}
           onOpenInfoPanel={isPublic ? () => setSidePanelOpen(true) : undefined}
+          themeOverrides={isPublic ? themeOverrides : undefined}
         />
       </div>
 

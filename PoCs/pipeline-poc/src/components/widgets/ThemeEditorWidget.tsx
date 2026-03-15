@@ -17,6 +17,7 @@ const CARD_FG_OPTIONS = [
 export interface ThemeSettings {
   theme_header_preset?: string;
   theme_header_fg_preset?: string;
+  theme_widget_fg_preset?: string;
   theme_bottom_nav_preset?: string;
   theme_bottom_nav_fg_preset?: string;
   theme_about_me_preset?: string;
@@ -36,6 +37,7 @@ function getInitialTheme(sessionParams: Record<string, unknown> | undefined): Th
   return {
     theme_header_preset: String(sessionParams?.theme_header_preset ?? "default"),
     theme_header_fg_preset: String(sessionParams?.theme_header_fg_preset ?? "default"),
+    theme_widget_fg_preset: String(sessionParams?.theme_widget_fg_preset ?? "default"),
     theme_bottom_nav_preset: String(sessionParams?.theme_bottom_nav_preset ?? "default"),
     theme_bottom_nav_fg_preset: String(sessionParams?.theme_bottom_nav_fg_preset ?? "default"),
     theme_about_me_preset: String(sessionParams?.theme_about_me_preset ?? "default"),
@@ -107,6 +109,30 @@ export function ThemeEditorWidget({ sessionParams, onSubmit, onCancel }: ThemeEd
                 ))}
               </select>
             </div>
+          </div>
+        </section>
+
+        {/* Widget text color (cards, announcements, etc.) */}
+        <section className="space-y-2 rounded-lg border p-3">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Widget text color
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            Text color for cards, announcements, activity stats, and similar widgets.
+          </p>
+          <div>
+            <label className="text-xs text-muted-foreground">Color</label>
+            <select
+              value={theme.theme_widget_fg_preset ?? "default"}
+              onChange={(e) => update("theme_widget_fg_preset", e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 rounded border bg-muted/50 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              {CARD_FG_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
         </section>
 

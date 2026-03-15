@@ -183,7 +183,7 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const themeOverrides = usePublicTheme();
   const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
-  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.widgetFgPreset ?? themeOverrides?.headerFgPreset);
   const [viewMode, setViewMode] = useState<ActivityViewMode>("list");
   const [viewModeDropdownOpen, setViewModeDropdownOpen] = useState(false);
   const [pressedHeaderActionId, setPressedHeaderActionId] = useState<string | null>(null);

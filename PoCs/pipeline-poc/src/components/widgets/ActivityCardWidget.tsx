@@ -63,7 +63,7 @@ export function ActivityCardWidget({ widget, onAction, onConfirm, onPinToContext
   const [isEditing, setIsEditing] = useState(false);
   const themeOverrides = usePublicTheme();
   const widgetBorderStyle = getWidgetBorderStyle(themeOverrides?.headerPreset);
-  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.headerFgPreset);
+  const { style: widgetFgStyle, inheritClass: widgetFgClass } = getWidgetFgStyle(themeOverrides?.widgetFgPreset ?? themeOverrides?.headerFgPreset);
   const d = widget.data;
   const effectiveOnPinToContext = (d._noPin as boolean) ? undefined : onPinToContext;
   const title = (d.title as string) ?? "Untitled Activity";

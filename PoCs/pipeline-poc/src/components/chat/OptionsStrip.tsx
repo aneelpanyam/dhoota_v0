@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Sparkles, PlusCircle, UserCircle, FileText, MoreVertical, X } from "lucide-react";
 import type { OptionReference } from "@/types/api";
 import { getOptionIcon } from "@/lib/icons/option-icons";
+import { getPresetStyles } from "@/lib/theme-presets";
 
 const TENANT_TOP_OPTIONS = [
   { optionId: "activity.create", icon: PlusCircle, label: "Add Activity" },
@@ -16,6 +17,7 @@ interface OptionsStripProps {
   isPublicMode: boolean;
   featureFlags?: string[];
   representativeAvatarUrl?: string | null;
+  themeOverrides?: { bottomNavPreset?: string; bottomNavFgPreset?: string };
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
   contextFilters?: { id: string; name: string }[];
@@ -28,6 +30,7 @@ export function OptionsStrip({
   isPublicMode,
   featureFlags = [],
   representativeAvatarUrl,
+  themeOverrides,
   onOptionSelect,
   onExplore,
   contextFilters = [],
@@ -78,9 +81,16 @@ export function OptionsStrip({
 
   const moreOptions = isPublicMode ? publicMoreOptions : tenantMoreOptions;
   const filterCount = contextFilters.length;
+  const navStyles =
+    isPublicMode && themeOverrides
+      ? getPresetStyles(themeOverrides.bottomNavPreset, themeOverrides.bottomNavFgPreset)
+      : null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-3 border-t bg-muted/30 overflow-x-auto">
+    <div
+      className={`flex items-center gap-2 px-4 py-3 border-t overflow-x-auto bg-muted/30 ${navStyles ? "[&_.text-muted-foreground]:!text-inherit [&_.text-foreground]:!text-inherit" : ""}`}
+      style={navStyles ?? undefined}
+    >
       <button
         onClick={onExplore}
         className="flex items-center gap-2 shrink-0 p-2 md:px-3 md:py-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"

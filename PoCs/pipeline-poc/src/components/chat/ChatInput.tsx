@@ -36,6 +36,7 @@ interface ChatInputProps {
   onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
   featureFlags?: string[];
   onOpenInfoPanel?: () => void;
+  themeOverrides?: { bottomNavPreset?: string; bottomNavFgPreset?: string };
 }
 
 interface PendingFile {
@@ -67,6 +68,7 @@ export function ChatInput({
   onOptionSelect,
   featureFlags = [],
   onOpenInfoPanel,
+  themeOverrides,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -325,6 +327,7 @@ export function ChatInput({
               isPublicMode={isPublicMode ?? false}
               featureFlags={featureFlags}
               representativeAvatarUrl={representativeAvatarUrl}
+              themeOverrides={themeOverrides}
               onOptionSelect={(optionId, params) => onOptionSelect?.(optionId, params)}
               onExplore={() => setIsExpanded(true)}
               contextFilters={contextFilters}

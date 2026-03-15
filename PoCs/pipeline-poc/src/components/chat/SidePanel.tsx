@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { getCardPresetClasses } from "@/lib/theme-presets";
+import { getCardPresetClasses, getPresetStyles, getWidgetBorderStyle } from "@/lib/theme-presets";
 
 export interface InfoCard {
   id: string;
@@ -16,7 +16,12 @@ interface SidePanelProps {
   cards: InfoCard[];
   isOpen: boolean;
   onClose: () => void;
-  themeOverrides?: { infoCardPreset?: string; infoCardFgPreset?: string };
+  themeOverrides?: {
+    headerPreset?: string;
+    headerFgPreset?: string;
+    infoCardPreset?: string;
+    infoCardFgPreset?: string;
+  };
 }
 
 const CARD_TYPE_LABELS: Record<string, string> = {
@@ -67,6 +72,10 @@ export function SidePanel({ cards, isOpen, onClose, themeOverrides }: SidePanelP
     themeOverrides?.infoCardPreset,
     themeOverrides?.infoCardFgPreset
   );
+  const headerStyles =
+    themeOverrides
+      ? getPresetStyles(themeOverrides.headerPreset, themeOverrides.headerFgPreset)
+      : null;
   const grouped = cards.reduce<Record<string, InfoCard[]>>((acc, card) => {
     const key = card.card_type.toLowerCase().replace(/\s+/g, "_") || "custom";
     if (!acc[key]) acc[key] = [];
@@ -83,7 +92,10 @@ export function SidePanel({ cards, isOpen, onClose, themeOverrides }: SidePanelP
 
   const panelContent = (
     <>
-      <div className="flex items-center justify-between h-14 px-4 border-b shrink-0">
+      <div
+        className={`flex items-center justify-between h-14 px-4 border-b shrink-0 ${headerStyles ? "[&_.text-muted-foreground]:!text-inherit [&_.text-foreground]:!text-inherit" : ""}`}
+        style={headerStyles ?? undefined}
+      >
         <h3 className="font-semibold text-foreground">Info</h3>
         <button
           onClick={onClose}
@@ -112,7 +124,7 @@ export function SidePanel({ cards, isOpen, onClose, themeOverrides }: SidePanelP
                     <div
                       key={card.id}
                       className={`rounded-lg p-3 shadow-sm ${infoCardClass}`}
-                      style={infoCardStyle}
+                      style={{ ...infoCardStyle, ...getWidgetBorderStyle(themeOverrides?.headerPreset) }}
                     >
                       <h5 className="font-medium text-foreground mb-2">
                         {card.title}
