@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { Widget, WidgetAction } from "@/types/api";
+import type { Widget, WidgetAction, OptionReference } from "@/types/api";
 import type { ContextItem } from "@/components/chat/ContextStrip";
 import {
   Eye, Pencil, MessageSquare, ChevronLeft, ChevronRight,
@@ -20,6 +20,8 @@ import { EditActivityFormWidget } from "./EditActivityFormWidget";
 import { ActivityCalendarView } from "./ActivityCalendarView";
 import { ActivityTimelineView } from "./ActivityTimelineView";
 import { ActivityStatsBar } from "./ActivityStatsBar";
+import { useIsMobile } from "@/lib/hooks/use-is-mobile";
+import { getOptionIcon, isValidOptionIcon } from "@/lib/icons/option-icons";
 
 type ActivityViewMode = "list" | "calendar" | "timeline" | "stats";
 
@@ -31,16 +33,9 @@ interface Props {
   onQAResponse: (optionId: string, params: Record<string, unknown>, content?: string) => void;
   onCancel: () => void;
   onPinToContext?: (item: ContextItem) => void;
+  headerActions?: OptionReference[];
 }
 
-const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  Eye, Pencil, MessageSquare, Image: ImageIcon,
-  PlusCircle, MinusCircle, Trash2, CalendarDays, CalendarPlus,
-  UserPlus, UserCog, Users, Reply, Key, ShieldOff, RefreshCw,
-  ToggleLeft, List, FileText, MessageSquarePlus, MessageCircle,
-  Smartphone, Zap, Calendar, Pin, Tags, Share2,
-  Megaphone, CreditCard, Globe, Settings, HelpCircle, LayoutGrid, Info,
-};
 
 const statusColors: Record<string, string> = {
   planned: "bg-blue-100 text-blue-700",
@@ -124,11 +119,69 @@ const VIEW_MODES: { id: ActivityViewMode; label: string; icon: React.ComponentTy
   { id: "stats", label: "Summary", icon: BarChart3 },
 ];
 
-export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, onPinToContext }: Props) {
+function HeaderActionButton({
+  opt,
+  onOptionSelect,
+  isMobile,
+  pressedActionId,
+  onActionPress,
+}: {
+  opt: OptionReference;
+  onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
+  isMobile: boolean;
+  pressedActionId: string | null;
+  onActionPress: (id: string | null) => void;
+}) {
+  const Icon = getOptionIcon(opt.icon);
+  const isPressed = isMobile && pressedActionId === opt.optionId;
+
+  const handleClick = () => {
+    if (isMobile) {
+      if (isPressed) {
+        onActionPress(null);
+        onOptionSelect(opt.optionId, opt.params);
+      } else {
+        onActionPress(opt.optionId);
+      }
+    } else {
+      onOptionSelect(opt.optionId, opt.params);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        className={`p-1.5 rounded-lg transition ${isPressed ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground hover:text-primary"}`}
+        title={opt.name}
+        aria-label={opt.name}
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+      {isPressed && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            aria-hidden
+            onClick={() => onActionPress(null)}
+          />
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs font-medium whitespace-nowrap z-40">
+            {opt.name}
+            <span className="block text-[10px] text-muted-foreground font-normal mt-0.5">Tap again to run</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, onPinToContext, headerActions }: Props) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ActivityViewMode>("list");
   const [viewModeDropdownOpen, setViewModeDropdownOpen] = useState(false);
+  const [pressedHeaderActionId, setPressedHeaderActionId] = useState<string | null>(null);
   const viewModeDropdownRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -363,54 +416,68 @@ export function DataListWidget({ widget, onAction, onOptionSelect, onConfirm, on
             ))}
           </div>
 
-          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
-            {totalItems > pageSize ? (
-              <>
-                <span>
-                  Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalItems)} of {totalItems}
+          <div className="flex items-center justify-between gap-2 px-4 py-2 border-t text-xs text-muted-foreground min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {totalItems > pageSize ? (
+                <>
+                  <span className="truncate">
+                    Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalItems)} of {totalItems}
+                  </span>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      disabled={page <= 1}
+                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page - 1, pageSize })}
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      disabled={page * pageSize >= totalItems}
+                      onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page + 1, pageSize })}
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <span className="truncate">
+                  {hasActivityFields
+                    ? `${totalItems} of My Public Activities`
+                    : hasAnnouncementFields
+                      ? totalItems !== 1 ? `${totalItems} Public Announcements` : "1 Public Announcement"
+                      : `${totalItems} item${totalItems !== 1 ? "s" : ""}`}
                 </span>
-                <div className="flex gap-1">
-                  <button
-                    disabled={page <= 1}
-                    onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page - 1, pageSize })}
-                    className="p-1 rounded hover:bg-muted disabled:opacity-30"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    disabled={page * pageSize >= totalItems}
-                    onClick={() => paginationOptionId && onOptionSelect(paginationOptionId, { page: page + 1, pageSize })}
-                    className="p-1 rounded hover:bg-muted disabled:opacity-30"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <span>
-                {hasActivityFields
-                  ? `${totalItems} of My Public Activities`
-                  : hasAnnouncementFields
-                    ? totalItems !== 1 ? `${totalItems} Public Announcements` : "1 Public Announcement"
-                    : `${totalItems} item${totalItems !== 1 ? "s" : ""}`}
-              </span>
-            )}
-            {effectiveOnPinToContextCollection && items.length > 0 && (
-              <button
-                onClick={() => {
-                  for (const item of items) {
-                    const activityId = hasActivityFields ? (item.id as string | undefined) : undefined;
-                    const viewAction = activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined;
-                    effectiveOnPinToContextCollection(buildContextItem(item, columns, viewAction));
-                  }
-                }}
-                className="flex items-center gap-1 text-primary/70 hover:text-primary transition"
-                title="Pin all to context for insights"
-              >
-                <Pin className="h-3 w-3" />
-                Pin all
-              </button>
-            )}
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {headerActions && headerActions.length > 0 && headerActions.map((opt) => (
+                <HeaderActionButton
+                  key={opt.optionId}
+                  opt={opt}
+                  onOptionSelect={onOptionSelect}
+                  isMobile={isMobile}
+                  pressedActionId={pressedHeaderActionId}
+                  onActionPress={setPressedHeaderActionId}
+                />
+              ))}
+              {effectiveOnPinToContextCollection && items.length > 0 && (
+                <button
+                  onClick={() => {
+                    for (const item of items) {
+                      const activityId = hasActivityFields ? (item.id as string | undefined) : undefined;
+                      const viewAction = activityId ? { optionId: "activity.view", params: { activity_id: activityId } } : undefined;
+                      effectiveOnPinToContextCollection(buildContextItem(item, columns, viewAction));
+                    }
+                  }}
+                  className="flex items-center gap-1 text-primary/70 hover:text-primary transition p-1.5 rounded-lg hover:bg-muted"
+                  title="Pin all to context for insights"
+                  aria-label="Pin all"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -805,7 +872,7 @@ function AnnouncementListItem({
       {actions && actions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-1" onClick={(e) => e.stopPropagation()}>
           {actions.map((action, i) => {
-            const Icon = iconMap[action.icon] ?? Zap;
+            const Icon = getOptionIcon(action.icon);
             return (
               <button
                 key={i}
@@ -930,7 +997,7 @@ function BookmarkListItem({
       </div>
       <div className="flex gap-1 shrink-0">
         {actions?.map((action, ai) => {
-          const Icon = iconMap[action.icon] ?? Zap;
+          const Icon = getOptionIcon(action.icon);
           return (
             <button
               key={ai}
@@ -1317,13 +1384,13 @@ function ItemActions({
 
   if (!actions || actions.length === 0) return null;
 
-  const isZapOrDefault = (icon: string) => !iconMap[icon] || icon === "Zap";
+  const isZapOrDefault = (icon: string) => !isValidOptionIcon(icon) || icon === "Zap";
   const primaryActions = actions.filter((a) => !isZapOrDefault(a.icon ?? "Zap"));
   const overflowActions = actions.filter((a) => isZapOrDefault(a.icon ?? "Zap"));
   const hasOverflow = overflowActions.length > 0;
 
   const renderActionButton = (action: WidgetAction, ai: number, showLabel = false) => {
-    const Icon = iconMap[action.icon] ?? Zap;
+    const Icon = getOptionIcon(action.icon);
     const isEdit = action.optionId === "activity.edit";
     return (
       <button

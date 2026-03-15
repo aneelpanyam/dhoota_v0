@@ -166,14 +166,19 @@ async function loadRecentMessages(
   );
 }
 
+import { isValidOptionIcon } from "@/lib/icons/option-icons";
+
 export function optionsToReferences(options: OptionDefinition[]) {
   return options
     .sort((a, b) => (a.default_priority ?? 100) - (b.default_priority ?? 100))
-    .map((opt) => ({
-      optionId: opt.id,
-      name: opt.name,
-      icon: opt.icon ?? "Zap",
-      description: opt.description,
-      loadingMessage: opt.loading_message ?? undefined,
-    }));
+    .map((opt) => {
+      const icon = opt.icon ?? "Zap";
+      return {
+        optionId: opt.id,
+        name: opt.name,
+        icon: isValidOptionIcon(icon) ? icon : "Zap",
+        description: opt.description,
+        loadingMessage: opt.loading_message ?? undefined,
+      };
+    });
 }

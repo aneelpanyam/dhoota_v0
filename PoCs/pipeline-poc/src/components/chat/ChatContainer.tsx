@@ -7,6 +7,7 @@ import { useSessionTimeout } from "@/lib/hooks/use-session-timeout";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { DebugPanel } from "./DebugPanel";
 import { isDebugPanelEnabled } from "@/lib/auth/public-mode";
@@ -36,6 +37,7 @@ export function ChatContainer() {
     featureFlags?: string[];
   } | null>(null);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [inputExpanded, setInputExpanded] = useState(false);
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [contextFilters, setContextFilters] = useState<{ id: string; name: string }[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<{ id: string; name: string } | null>(null);
@@ -134,7 +136,7 @@ export function ChatContainer() {
   const showSidebar = sessionLoaded && !isPublic;
 
   return (
-    <div className="flex h-screen w-full bg-background">
+    <div className="flex h-screen w-full max-w-full overflow-x-hidden bg-background">
       {showSidebar && (
         <ConversationSidebar
           userDisplayName={chat.userDisplayName}
@@ -145,7 +147,7 @@ export function ChatContainer() {
         />
       )}
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
         {/* Header */}
         <header
           className={`h-14 border-b flex items-center shrink-0 gap-3 ${
@@ -283,6 +285,8 @@ export function ChatContainer() {
 
         {/* Input */}
         <ChatInput
+          expanded={inputExpanded}
+          onExpandChange={setInputExpanded}
           onSendReport={(filter) => {
             recordActivity();
             chat.sendMessage({
@@ -331,8 +335,35 @@ export function ChatContainer() {
               params: item.viewAction.params,
             });
           }}
+          defaultOptions={sessionLoaded ? chat.defaultOptions : []}
+          onOptionSelect={(optionId, params) => {
+            recordActivity();
+            chat.sendMessage({
+              source: "default_option",
+              optionId,
+              params,
+            });
+          }}
+          featureFlags={sessionContext?.featureFlags ?? []}
         />
       </div>
+
+      {sessionLoaded && (
+        <MobileBottomNav
+          defaultOptions={chat.defaultOptions}
+          isPublicMode={isPublic}
+          featureFlags={sessionContext?.featureFlags ?? []}
+          onOptionSelect={(optionId, params) => {
+            recordActivity();
+            chat.sendMessage({
+              source: "default_option",
+              optionId,
+              params,
+            });
+          }}
+          onExplore={() => setInputExpanded(true)}
+        />
+      )}
 
       {isPublic && (
         <SidePanel

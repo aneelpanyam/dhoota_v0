@@ -1,6 +1,6 @@
 "use client";
 
-import type { Widget } from "@/types/api";
+import type { Widget, OptionReference } from "@/types/api";
 import {
   Activity,
   CheckCircle2,
@@ -16,6 +16,7 @@ import {
   BarChart3,
   AlertCircle,
 } from "lucide-react";
+import { HeaderActionStrip } from "./HeaderActionStrip";
 
 interface StatItem {
   label: string;
@@ -48,22 +49,27 @@ function iconForLabel(label: string) {
 
 interface Props {
   widget: Widget;
+  onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
+  headerActions?: OptionReference[];
 }
 
-export function StatsGridWidget({ widget }: Props) {
+export function StatsGridWidget({ widget, onOptionSelect, headerActions }: Props) {
   const stats = (widget.data?.stats as StatItem[] | undefined) ?? [];
 
   if (stats.length === 0) return null;
 
-  return (
+  const hasFooter = headerActions && headerActions.length > 0 && onOptionSelect;
+
+  const cellClass = hasFooter
+    ? "rounded-lg bg-muted/50 p-2.5 flex items-center gap-2 min-w-0"
+    : "rounded-lg border bg-card p-2.5 flex items-center gap-2 min-w-0";
+
+  const grid = (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
       {stats.map((stat) => {
         const { icon: Icon, color } = iconForLabel(stat.label);
         return (
-          <div
-            key={stat.label}
-            className="rounded-lg border bg-card p-2.5 flex items-center gap-2 min-w-0"
-          >
+          <div key={stat.label} className={cellClass}>
             <Icon className={`h-4 w-4 shrink-0 ${color}`} />
             <div className="min-w-0 flex-1">
               <span className="text-base font-bold leading-tight whitespace-nowrap">
@@ -76,6 +82,20 @@ export function StatsGridWidget({ widget }: Props) {
           </div>
         );
       })}
+    </div>
+  );
+
+  if (!hasFooter) return grid;
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="p-4">{grid}</div>
+      <div className="flex items-center justify-end gap-1 px-4 py-2 border-t text-xs text-muted-foreground min-w-0">
+        <HeaderActionStrip
+          headerActions={headerActions}
+          onOptionSelect={onOptionSelect}
+        />
+      </div>
     </div>
   );
 }

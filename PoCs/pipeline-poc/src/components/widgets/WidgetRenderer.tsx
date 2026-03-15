@@ -1,6 +1,6 @@
 "use client";
 
-import type { Widget, WidgetAction, WidgetType } from "@/types/api";
+import type { Widget, WidgetAction, WidgetType, OptionReference } from "@/types/api";
 import type { ContextItem } from "@/components/chat/ContextStrip";
 import { TextResponseWidget } from "./TextResponseWidget";
 import { ActivityCardWidget } from "./ActivityCardWidget";
@@ -35,6 +35,7 @@ export interface WidgetRendererProps {
   ) => void;
   onCancel: () => void;
   onPinToContext?: (item: ContextItem) => void;
+  headerActions?: OptionReference[];
 }
 
 const widgetMap: Record<WidgetType, React.ComponentType<WidgetRendererProps>> = {

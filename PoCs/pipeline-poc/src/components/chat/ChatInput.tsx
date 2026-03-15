@@ -3,7 +3,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Send, Paperclip, X, Sparkles, Pin, ChevronDown } from "lucide-react";
 import type { FileReference, ConversationState } from "@/types/api";
+import type { OptionReference } from "@/types/api";
 import { ContextStrip, type ContextItem } from "./ContextStrip";
+import { OptionsStrip } from "./OptionsStrip";
 
 interface ContextFilter {
   id: string;
@@ -13,6 +15,8 @@ interface ContextFilter {
 }
 
 interface ChatInputProps {
+  expanded?: boolean;
+  onExpandChange?: (expanded: boolean) => void;
   onSend: (content: string, files?: FileReference[]) => void;
   onSendInsights: (content: string, contextItems: ContextItem[], filter?: { id: string; name: string }) => void;
   onSendReport?: (filter: { id: string; name: string }) => void;
@@ -27,6 +31,9 @@ interface ChatInputProps {
   selectedFilter?: { id: string; name: string };
   onFilterSelect?: (filterId: string) => void;
   onClearFilter?: () => void;
+  defaultOptions?: OptionReference[];
+  onOptionSelect?: (optionId: string, params?: Record<string, unknown>) => void;
+  featureFlags?: string[];
 }
 
 interface PendingFile {
@@ -37,6 +44,8 @@ interface PendingFile {
 }
 
 export function ChatInput({
+  expanded: controlledExpanded,
+  onExpandChange,
   onSend,
   onSendInsights,
   onSendReport,
@@ -51,10 +60,18 @@ export function ChatInput({
   selectedFilter,
   onFilterSelect,
   onClearFilter,
+  defaultOptions = [],
+  onOptionSelect,
+  featureFlags = [],
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const isControlled = controlledExpanded !== undefined;
+  const isExpanded = isControlled ? controlledExpanded : internalExpanded;
+  const setIsExpanded = isControlled
+    ? (v: boolean) => onExpandChange?.(v)
+    : setInternalExpanded;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -63,8 +80,13 @@ export function ChatInput({
   const isInsightsMode = hasContext || hasFilter;
 
   // Auto-expand when user pins items, selects a filter, or needs to respond
+  // Auto-collapse when back to active (e.g. after option execution) so Explore strip doesn't stay open
   useEffect(() => {
-    if (isInsightsMode || conversationState !== "active") setIsExpanded(true);
+    if (isInsightsMode || conversationState !== "active") {
+      setIsExpanded(true);
+    } else {
+      setIsExpanded(false);
+    }
   }, [isInsightsMode, conversationState]);
 
   const handleSubmit = useCallback(() => {
@@ -291,21 +313,16 @@ export function ChatInput({
           </div>
         </>
       ) : (
-        /* Collapsed: sparkles button to expand */
-        <div className="flex items-center justify-center gap-2 w-full py-3 px-4">
-          <button
-            onClick={() => setIsExpanded(true)}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg px-3 py-2 transition"
-            title="Gather insights"
-          >
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">Explore</span>
-          </button>
-          {contextFilters && contextFilters.length > 0 && (
-            <span className="text-xs text-muted-foreground" title={`${contextFilters.length} filter${contextFilters.length !== 1 ? "s" : ""} available`}>
-              {contextFilters.length} filter{contextFilters.length !== 1 ? "s" : ""}
-            </span>
-          )}
+        /* Collapsed: mobile uses fixed bottom nav; desktop shows options strip */
+        <div className="hidden md:block">
+            <OptionsStrip
+              defaultOptions={defaultOptions}
+              isPublicMode={isPublicMode ?? false}
+              featureFlags={featureFlags}
+              onOptionSelect={(optionId, params) => onOptionSelect?.(optionId, params)}
+              onExplore={() => setIsExpanded(true)}
+              contextFilters={contextFilters}
+            />
         </div>
       )}
     </div>

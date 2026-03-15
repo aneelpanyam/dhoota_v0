@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 import type { WidgetAction, ChatMessageResponse, OptionReference, Widget } from "@/types/api";
 import { WidgetRenderer } from "@/components/widgets/WidgetRenderer";
 import { User, Bot, ChevronDown, ChevronUp, MessageSquare, Copy, Check, X, Eye, Bookmark, Sparkles } from "lucide-react";
 import type { ContextItem } from "./ContextStrip";
+import { getOptionIcon } from "@/lib/icons/option-icons";
 
 function splitIntoWidgetGroups(widgets: Widget[]): { type: "welcome_messages" | "single"; widgets: Widget[] }[] {
   const groups: { type: "welcome_messages" | "single"; widgets: Widget[] }[] = [];
@@ -132,6 +133,13 @@ export function MessageBubble({
   const response = message.response;
   if (!response) return null;
 
+  // Skip messages that only contain default_options_menu (we now show options in the Explore strip)
+  const widgets = response.widgets ?? [];
+  const onlyDefaultMenu =
+    widgets.length > 0 &&
+    widgets.every((w) => w.type === "default_options_menu");
+  if (onlyDefaultMenu) return null;
+
   const collapsed = message.collapsedMessages;
   const hasCollapsed = collapsed && collapsed.length > 0;
 
@@ -148,9 +156,20 @@ export function MessageBubble({
       </div>
     );
 
+  const avatarWrapperClass = representativeAvatarUrl
+    ? "flex shrink-0"
+    : "hidden md:flex shrink-0";
+
+  const hasDataList = response.widgets.some((w) => w.type === "data_list");
+  const hasStatsWidget =
+    response.widgets.some((w) => w.type === "stats_grid") ||
+    response.widgets.some((w) => w.type === "stats_card");
+  const followUpsInHeader =
+    (hasDataList || hasStatsWidget) && response.followUps.length > 0;
+
   return (
     <div className="group/msg flex items-start gap-3">
-      {avatarEl}
+      <div className={avatarWrapperClass}>{avatarEl}</div>
       <div className="flex-1 min-w-0 space-y-3">
         {/* Collapsed conversation toggle */}
         {hasCollapsed && (
@@ -181,6 +200,7 @@ export function MessageBubble({
             w.type === "welcome_message"
               ? { ...w, data: { ...w.data, representativeAvatarUrl: representativeAvatarUrl ?? undefined } }
               : w;
+          const headerActions = followUpsInHeader ? response.followUps : undefined;
           return groups.map((group, i) =>
             group.type === "welcome_messages" && group.widgets.length > 1 ? (
               <div key={`welcome-group-${i}`} className="">
@@ -194,6 +214,7 @@ export function MessageBubble({
                     onQAResponse={onQAResponse}
                     onCancel={onCancel}
                     onPinToContext={onPinToContext}
+                    headerActions={headerActions}
                   />
                 ))}
               </div>
@@ -208,6 +229,7 @@ export function MessageBubble({
                   onQAResponse={onQAResponse}
                   onCancel={onCancel}
                   onPinToContext={onPinToContext}
+                  headerActions={headerActions}
                 />
               ))
             )
@@ -218,6 +240,7 @@ export function MessageBubble({
           response={response}
           isLastMessage={!!isLastMessage}
           onOptionSelect={onOptionSelect}
+          hideFollowUps={followUpsInHeader}
         />
 
         {response.traceId && <TraceIdBadge traceId={response.traceId} />}
@@ -242,18 +265,72 @@ export function MessageBubble({
   );
 }
 
+function MobileActionButton({
+  actionId,
+  label,
+  Icon,
+  onSelect,
+  variant,
+}: {
+  actionId: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  onSelect: () => void;
+  variant: "primary" | "default";
+}) {
+  const [pressed, setPressed] = useState(false);
+  const handleClick = () => {
+    if (pressed) {
+      setPressed(false);
+      onSelect();
+    } else {
+      setPressed(true);
+    }
+  };
+  const baseClass = "shrink-0 p-2 rounded-lg transition";
+  const variantClass =
+    variant === "primary"
+      ? "border border-primary/30 text-primary hover:bg-primary/5"
+      : "border border-muted-foreground/30 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5";
+  return (
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        className={`${baseClass} ${variantClass} ${pressed ? "bg-primary/10 ring-1 ring-primary/30" : ""}`}
+        title={label}
+        aria-label={label}
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+      {pressed && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            aria-hidden
+            onClick={() => setPressed(false)}
+          />
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs font-medium whitespace-nowrap z-40">
+            {label}
+            <span className="block text-[10px] text-muted-foreground font-normal mt-0.5">Tap again to run</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function NextActionsSection({
   response,
   isLastMessage,
   onOptionSelect,
+  hideFollowUps = false,
 }: {
   response: ChatMessageResponse;
   isLastMessage: boolean;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
+  hideFollowUps?: boolean;
 }) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showOtherOptions, setShowOtherOptions] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const canShowDefaultOptions =
     isLastMessage &&
@@ -261,92 +338,16 @@ function NextActionsSection({
     response.defaultOptions.length > 0 &&
     !response.widgets.some((w) => w.type === "default_options_menu");
 
-  const hasFollowUps = response.followUps.length > 0;
+  const hasFollowUps = !hideFollowUps && response.followUps.length > 0;
   const hasDefaultOpts = canShowDefaultOptions;
   // When no follow-ups: show default options inline. When follow-ups exist: show them + expandable "Other options"
   const showDefaultOptionsInline = hasDefaultOpts && !hasFollowUps;
   const showOtherOptionsTrigger = hasFollowUps && hasDefaultOpts;
+  // On mobile, hide when we only have default options (bottom nav provides them)
   const hasAny = hasFollowUps || showDefaultOptionsInline || showOtherOptionsTrigger;
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    if (dropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [dropdownOpen]);
+  const showOnMobile = hasFollowUps || showOtherOptionsTrigger;
 
   if (!hasAny) return null;
-
-  const renderFollowUp = (fu: OptionReference) => {
-    const activityId = fu.params?.activity_id as string | undefined;
-    const activityCard = activityId
-      ? response.widgets?.find(
-          (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
-        )?.data
-      : undefined;
-    const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
-    const contextItems = activityCard?.title
-      ? [
-          {
-            entityType: "activity",
-            entityId: (activityCard.id as string) ?? activityId!,
-            label: (activityCard.title as string) ?? "Activity",
-            summary:
-              [activityCard.status, activityDate].filter(Boolean).length > 0
-                ? [
-                    activityCard.status,
-                    activityDate
-                      ? new Date(activityDate as string).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : "",
-            viewAction: {
-              optionId: "activity.view",
-              params: { activity_id: (activityCard.id as string) ?? activityId! },
-            },
-          },
-        ]
-      : undefined;
-    return (
-      <button
-        key={fu.optionId}
-        onClick={() => {
-          setDropdownOpen(false);
-          onOptionSelect(fu.optionId, {
-            ...fu.params,
-            ...(contextItems && { __contextItems: contextItems }),
-          });
-        }}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted transition"
-      >
-        {fu.name}
-      </button>
-    );
-  };
-
-  const renderDefaultOpt = (opt: OptionReference) => (
-    <button
-      key={opt.optionId}
-      onClick={() => {
-        setDropdownOpen(false);
-        onOptionSelect(opt.optionId, opt.params);
-      }}
-      className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted transition"
-    >
-      {opt.name}
-    </button>
-  );
 
   return (
     <div className="pt-1 space-y-2">
@@ -446,22 +447,81 @@ function NextActionsSection({
           </>
         )}
       </div>
-      {/* Mobile: dropdown */}
-      <div ref={dropdownRef} className="md:hidden relative">
-        <button
-          onClick={() => setDropdownOpen((v) => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/5 transition text-sm"
-        >
-          Next actions
-          <ChevronDown className={`h-3 w-3 transition ${dropdownOpen ? "rotate-180" : ""}`} />
-        </button>
-        {dropdownOpen && (
-          <div className="absolute left-0 top-full mt-1 py-1 rounded-lg border bg-card shadow-lg z-50 min-w-[200px] overflow-hidden">
-            {hasFollowUps && response.followUps.map((fu) => renderFollowUp(fu))}
-            {hasDefaultOpts && response.defaultOptions.map((opt) => renderDefaultOpt(opt))}
+      {/* Mobile: horizontal nav strip (only when follow-ups exist; default-only options are in bottom nav) */}
+      {showOnMobile && (
+        <div className="md:hidden overflow-x-auto overflow-y-hidden">
+          <div className="flex gap-2 py-1 px-1 min-w-0">
+            {hasFollowUps &&
+              response.followUps.map((fu) => {
+                const activityId = fu.params?.activity_id as string | undefined;
+                const activityCard = activityId
+                  ? response.widgets?.find(
+                      (w) => w.type === "activity_card" && (w.data?.id as string) === activityId
+                    )?.data
+                  : undefined;
+                const activityDate = activityCard?.activity_date ?? activityCard?.activityDate;
+                const contextItems = activityCard?.title
+                  ? [
+                      {
+                        entityType: "activity" as const,
+                        entityId: (activityCard.id as string) ?? activityId!,
+                        label: (activityCard.title as string) ?? "Activity",
+                        summary:
+                          [activityCard.status, activityDate].filter(Boolean).length > 0
+                            ? [
+                                activityCard.status,
+                                activityDate
+                                  ? new Date(activityDate as string).toLocaleDateString("en-IN", {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "numeric",
+                                    })
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : "",
+                        viewAction: {
+                          optionId: "activity.view",
+                          params: { activity_id: (activityCard.id as string) ?? activityId! },
+                        },
+                      },
+                    ]
+                  : undefined;
+                const Icon = getOptionIcon(fu.icon);
+                return (
+                  <MobileActionButton
+                    key={fu.optionId}
+                    actionId={fu.optionId}
+                    label={fu.name}
+                    Icon={Icon}
+                    onSelect={() =>
+                      onOptionSelect(fu.optionId, {
+                        ...fu.params,
+                        ...(contextItems && { __contextItems: contextItems }),
+                      })
+                    }
+                    variant="primary"
+                  />
+                );
+              })}
+            {hasDefaultOpts &&
+              response.defaultOptions.map((opt) => {
+                const Icon = getOptionIcon(opt.icon);
+                return (
+                  <MobileActionButton
+                    key={opt.optionId}
+                    actionId={opt.optionId}
+                    label={opt.name}
+                    Icon={Icon}
+                    onSelect={() => onOptionSelect(opt.optionId, opt.params)}
+                    variant="default"
+                  />
+                );
+              })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -508,7 +568,9 @@ function CollapsedMessage({ message }: { message: ChatMessage }) {
     if (text) {
       return (
         <div className="flex items-start gap-2">
-          <Bot className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+          <span className="hidden md:inline-flex shrink-0 mt-0.5">
+            <Bot className="h-3 w-3 text-muted-foreground" />
+          </span>
           <p className="text-xs text-muted-foreground line-clamp-2">{text}</p>
         </div>
       );
@@ -520,7 +582,9 @@ function CollapsedMessage({ message }: { message: ChatMessage }) {
     if (otherTypes.length > 0) {
       return (
         <div className="flex items-start gap-2">
-          <Bot className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+          <span className="hidden md:inline-flex shrink-0 mt-0.5">
+            <Bot className="h-3 w-3 text-muted-foreground" />
+          </span>
           <p className="text-xs text-muted-foreground italic">[{otherTypes.join(", ")}]</p>
         </div>
       );

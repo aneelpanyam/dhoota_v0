@@ -3,5 +3,5 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="h-screen flex">{children}</div>;
+  return <div className="h-screen flex overflow-x-hidden max-w-full">{children}</div>;
 }
