@@ -85,3 +85,54 @@
 - All Supabase clients are now `Database`-typed. Future queries get full autocomplete and type checking.
 - Step 03 (Auth Flow) should use `users`, `access_codes` tables and the `getUserById` / `getAccessCodesByUserId` helpers.
 - To regenerate types from a live DB: `npx supabase gen types typescript --project-id <id> > src/lib/supabase/database.types.ts`
+
+---
+
+## Step 03: Auth Flow — 2026-03-16
+
+### Delivered
+- `src/lib/supabase/admin.ts` — Server-only admin client (`SUPABASE_SECRET_KEY`, bypasses RLS); `autoRefreshToken: false`, `persistSession: false`
+- `src/lib/services/auth.ts` — Auth service layer: `hashAccessCode` (SHA-256+pepper), `findUserByAccessCode`, `generateAndStoreOtp` / `validateStoredOtp` (in-memory stub), `createAuthSession` (admin generateLink → server verifyOtp), `maskEmail`
+- `src/lib/auth/index.ts` — `getCurrentUser()`, `requireAuth()`, `requireAdmin()` helpers using Supabase server client
+- `src/app/(auth)/actions.ts` — Server actions: `loginAction`, `verifyAction`, `resendOtp`, `signOut`; Zod schemas for access code and OTP
+- `src/app/(auth)/login/page.tsx` — Mobile-optimized login with password input, loading state, error display with trace_id
+- `src/app/(auth)/verify/page.tsx` — 6-digit OTP input with auto-focus, auto-advance, paste support, 60s resend cooldown
+- `src/middleware.ts` — Supabase SSR middleware: session refresh via `getUser()`, protects all routes except `/login` and `/verify`
+- `src/app/(auth)/layout.tsx` — Suspense wrapper for `useSearchParams` in verify page
+- `src/app/page.tsx` — Auth-aware home: shows welcome + sign out for authenticated users
+- `src/lib/services/auth.test.ts` — 13 unit tests: hashing, OTP flow (generate/verify/expiry/attempts/cooldown), maskEmail
+- `vitest.config.ts`, updated `package.json` with `test` and `test:watch` scripts
+- `.env.example` — Added `ACCESS_CODE_PEPPER`
+
+### Decisions Made
+- **SHA-256 + pepper for access codes** — Deterministic hash enables direct DB lookup (`WHERE code = hash`). Pepper from env var `ACCESS_CODE_PEPPER` prevents rainbow tables. Chose over bcrypt because bcrypt requires iterating all codes (non-deterministic salts).
+- **Custom OTP stub (in-memory)** — In-memory `Map<email, OtpEntry>` for development. OTP code logged to console via `logger.info`. 5-minute expiry, 3 max attempts, 60s resend cooldown. Replace with real email/SMS delivery in production.
+- **Session creation via admin `generateLink` + server `verifyOtp`** — Admin client generates a magiclink token (no email sent), extracts `hashed_token`, then server client exchanges it for a session (cookies set via SSR adapter). This avoids requiring email infrastructure for the stub.
+- **Admin client created now** — `src/lib/supabase/admin.ts` uses `createClient` from `@supabase/supabase-js` directly (not SSR), with `SUPABASE_SECRET_KEY`. Used for pre-auth access code lookup (RLS blocks unauthenticated users).
+- **Middleware protects by exclusion** — All routes require auth except `/login` and `/verify`. Simpler than enumerating protected routes. Authenticated users on auth pages are redirected to `/`.
+- **`useActionState` for forms, `useTransition` for resend** — Login and verify forms use React 19 `useActionState` for form actions. Resend uses `useTransition` with direct server action call for programmatic invocation.
+- **Vitest v2 for testing** — Vitest v4 requires Node 20/22+; project uses Node 21.4.0. Vitest v2 works. Tests mock Supabase clients and logger.
+
+### Patterns Established
+- **Admin client**: import from `@/lib/supabase/admin` — server-only, bypasses RLS. Never use in client code.
+- **Service layer pattern**: `src/lib/services/auth.ts` — business logic separated from server actions. Actions validate → call service → return/redirect.
+- **Auth utilities**: `getCurrentUser()` for optional auth, `requireAuth()` for mandatory (redirects), `requireAdmin()` for admin-only. All return `Tables<"users">`.
+- **Server action state type**: `AuthActionState` with `error?`, `fieldErrors?`, `traceId?` — consistent across all auth actions.
+- **Middleware pattern**: Supabase SSR `createServerClient` with request/response cookie adapter. `getUser()` for session validation (not `getSession()`).
+
+### Gotchas / Learnings
+- **SupabaseClient generics mismatch** — `@supabase/ssr` 0.6.x returns `SupabaseClient<Database, SchemaName, Schema>` (3 generics) but `@supabase/supabase-js` 2.99.x defines 5 generics. Fix: `TypedClient = SupabaseClient<Database, any, any>` in helpers.ts. Documented with comment.
+- **`CookieOptions` type needed in middleware** — The `setAll` callback in middleware must explicitly type its parameter to satisfy strict mode.
+- **`redirect()` inside `withTraceId`** — Next.js `redirect()` throws `NEXT_REDIRECT` which propagates through `AsyncLocalStorage.run`. This is expected; the framework catches it. `useActionState` doesn't receive new state on redirect — the page navigates instead.
+- **Suspense for `useSearchParams`** — Client components using `useSearchParams()` need a Suspense boundary. Added to `(auth)/layout.tsx`.
+- **Node 21.4.0 incompatible with vitest v4** — Missing `node:util.styleText`. Pinned to vitest v2.
+- **Module-level state lost in Next.js dev mode** — Next.js re-evaluates server modules across requests, resetting `Map`/`Set`/etc. Fix: attach to `globalThis` (e.g. `globalThis.__otpStore`). This is the standard singleton pattern for Next.js dev (same as Prisma client).
+
+### State for Next Step
+- Auth flow is complete: access code → OTP → session → protected routes.
+- **Migration must be applied** to Supabase before auth can work end-to-end (`001_core_schema.sql`).
+- **`ACCESS_CODE_PEPPER` must be set** in `.env.local` for access code hashing.
+- OTP is a stub (in-memory, logged to console). Production needs real email/SMS delivery.
+- Home page (`/`) shows welcome + sign out for authenticated users. Step 04 will replace with the app shell.
+- Test infrastructure ready: `npm test` runs vitest. Extend with more tests in future steps.
+- Auth utilities (`getCurrentUser`, `requireAuth`, `requireAdmin`) ready for use in Steps 04+ pages and actions.

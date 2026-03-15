@@ -2,7 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "./database.types";
 import { logger } from "@/lib/logger";
 
-type TypedClient = SupabaseClient<Database>;
+// @supabase/ssr 0.6.x returns 3-generic SupabaseClient; supabase-js 2.99.x defines 5 generics.
+// Use `any` for the extra schema params to keep both SSR and admin clients assignable.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TypedClient = SupabaseClient<Database, any, any>;
 
 export interface QueryResult<T> {
   data: T | null;

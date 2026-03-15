@@ -180,7 +180,7 @@ See [STEPS.md](STEPS.md) for the detailed 14-step execution roadmap with depende
 
 **Phase 5 (Step 13):** Admin module (mobile-first).
 
-**Phase 6 (Step 14):** Integration testing + polish.
+**Phase 6 (Step 14):** Integration testing + polish + deployment observability (CloudWatch log drain setup).
 
 **Future:** Collaboration (category_collaborators, invite flow), Suggestion Box, Public Site.
 

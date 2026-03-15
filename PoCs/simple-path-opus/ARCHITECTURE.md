@@ -1,7 +1,7 @@
 # Simple Path — Architecture
 
 > **Audience:** A developer joining this project on day one.
-> **Updated after:** Step 02 (Core Database Schema).
+> **Updated after:** Step 03 (Auth Flow).
 
 ---
 
@@ -37,20 +37,25 @@ PoCs/simple-path-opus/
 │   │   ├── layout.tsx              # Root layout (fonts, viewport, globals)
 │   │   ├── page.tsx                # Landing / redirect
 │   │   ├── globals.css             # Tailwind v4 @theme tokens + base styles
-│   │   ├── (auth)/layout.tsx       # Auth route group (login, OTP)
+│   │   ├── (auth)/layout.tsx       # Auth route group (Suspense wrapper)
+│   │   ├── (auth)/actions.ts      # Auth server actions (login, verify, resend, signout)
+│   │   ├── (auth)/login/page.tsx  # Access code entry
+│   │   ├── (auth)/verify/page.tsx # OTP verification
 │   │   ├── (app)/layout.tsx        # Authenticated app shell (channels, activities)
 │   │   └── (admin)/layout.tsx      # Admin route group
 │   ├── lib/
 │   │   ├── supabase/
 │   │   │   ├── client.ts           # Browser client — AUTH ONLY (sign in/out, session)
 │   │   │   ├── server.ts           # Server client — ALL DB reads/writes (respects RLS)
+│   │   │   ├── admin.ts            # Admin client — bypasses RLS (SUPABASE_SECRET_KEY, server-only)
 │   │   │   ├── database.types.ts   # Generated/hand-crafted DB types (Tables, Enums, etc.)
 │   │   │   └── helpers.ts          # Typed query wrappers (getUserById, getUserSpace, etc.)
 │   │   ├── logger.ts               # Structured JSON logger (server: with trace_id)
 │   │   ├── tracing.ts              # AsyncLocalStorage-based request tracing
 │   │   ├── validation/index.ts     # Zod helpers: validate(), validateOrThrow()
-│   │   ├── auth/                   # Auth utilities (future: getCurrentUser, requireAuth)
-│   │   ├── services/               # Business logic layer (future)
+│   │   ├── auth/index.ts           # getCurrentUser(), requireAuth(), requireAdmin()
+│   │   ├── services/auth.ts        # Auth business logic (hashing, OTP, session creation)
+│   │   ├── services/               # Business logic layer (future: activities, categories, etc.)
 │   │   ├── s3/                     # File storage (future)
 │   │   └── llm/                    # AI provider abstraction (future)
 │   └── components/
@@ -92,7 +97,7 @@ Route (page.tsx / server action)
 |--------|--------|-----|----------|
 | **Browser** | `@/lib/supabase/client` | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`) | Auth state only (sign in/out, session, onAuthStateChange), real-time subscriptions |
 | **Server** | `@/lib/supabase/server` | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`) + cookies | All DB reads/writes for authenticated user (respects RLS) |
-| **Admin** | `@/lib/supabase/admin` (future) | `SUPABASE_SECRET_KEY` (`sb_secret_...`) | Server-only admin operations that bypass RLS (user provisioning, system config) |
+| **Admin** | `@/lib/supabase/admin` | `SUPABASE_SECRET_KEY` (`sb_secret_...`) | Server-only: bypass RLS for pre-auth queries, admin operations, session creation |
 
 Rules:
 - **Never query tables from the browser.** All data flows through server actions → service layer → server client.
@@ -175,18 +180,59 @@ logger.info("Activity created", { activityId: "abc", categoryId: "xyz" });
 // → {"level":"info","message":"Activity created","timestamp":"...","traceId":"...","activityId":"abc","categoryId":"xyz"}
 ```
 
-### 6. Styling (Tailwind v4)
+### 6. Auth Flow
+
+```
+User enters access code → SHA-256+pepper hash → lookup in access_codes (admin client)
+  → valid: generate OTP (6-digit, in-memory stub) → redirect to /verify
+  → invalid: return error + trace_id
+
+User enters OTP on /verify → validate against store → if valid:
+  → admin.auth.admin.generateLink({ type: 'magiclink', email })
+  → server.auth.verifyOtp({ token_hash, type: 'magiclink' })
+  → session cookies set via SSR adapter → redirect to /
+```
+
+Auth utilities for server components/actions:
+
+```typescript
+import { getCurrentUser, requireAuth, requireAdmin } from "@/lib/auth";
+
+const user = await getCurrentUser();   // null if not authenticated
+const user = await requireAuth();      // redirects to /login if not authenticated
+const admin = await requireAdmin();    // redirects if not admin
+```
+
+### 7. Styling (Tailwind v4)
 
 - Design tokens defined in `globals.css` via `@theme` (not a tailwind.config.ts file).
 - Color scales: `primary-*` (warm indigo), `surface-*` (warm gray), `success-*`, `warning-*`, `danger-*`.
 - Fonts: `--font-sans` (Inter, body text), `--font-heading` (Nunito Sans, headings).
 - Use semantic token names: `text-primary-600`, `bg-surface-50`, `text-danger-500`.
 
-### 7. Route Groups
+### 8. Route Groups
 
-- `(auth)` — login/OTP flows; no app shell.
+- `(auth)` — login/OTP flows; no app shell. Suspense wrapper layout.
 - `(app)` — authenticated user flows; will have bottom nav + drill-down layout.
 - `(admin)` — admin flows; separate layout, same mobile-first approach.
+
+### 9. Middleware
+
+`src/middleware.ts` runs on every request (except static assets):
+
+1. Creates Supabase SSR client with request/response cookie adapter
+2. Calls `getUser()` to validate and refresh the JWT session
+3. Redirects unauthenticated users to `/login` (except auth pages)
+4. Redirects authenticated users away from `/login` and `/verify`
+
+### 10. Testing
+
+Vitest v2 with path aliases. Run: `npm test` (single run) or `npm run test:watch`.
+
+```typescript
+import { describe, it, expect, vi } from "vitest";
+// Mock external dependencies (Supabase, logger) via vi.mock()
+```
 
 ---
 
@@ -235,4 +281,4 @@ Migrations live in `supabase/migrations/`. Current migration: `001_core_schema.s
 
 ## What's Next
 
-Step 03 will add the auth flow: access code + OTP login, session management, `getCurrentUser`, `requireAuth` utilities.
+Step 04 will add the app shell + design system: bottom navigation, drill-down layout, shared UI components (Button, Input, Card, Toast).

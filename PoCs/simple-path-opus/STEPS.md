@@ -19,7 +19,7 @@
 |---|------|--------|--------------|-------|
 | 01 | Bootstrap + Foundations | `done` | — | [STEP-01](steps/STEP-01.md) |
 | 02 | Core Database Schema | `done` | Step 01 | [STEP-02](steps/STEP-02.md) |
-| 03 | Auth Flow | `pending` | Step 02 | [STEP-03](steps/STEP-03.md) |
+| 03 | Auth Flow | `done` | Step 02 | [STEP-03](steps/STEP-03.md) |
 | 04 | App Shell + Design System | `pending` | Steps 01, 03 | [STEP-04](steps/STEP-04.md) |
 | 05 | Categories + Channel List | `pending` | Steps 02, 04 | [STEP-05](steps/STEP-05.md) |
 | 06 | Activity Creation + Schema | `pending` | Step 05 | [STEP-06](steps/STEP-06.md) |

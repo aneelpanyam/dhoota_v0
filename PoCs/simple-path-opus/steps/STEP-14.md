@@ -38,11 +38,18 @@ Verify the full end-to-end application, optimize performance, audit error handli
 - [ ] Insight generation: select activities → generate → save → export
 - [ ] Admin provisioning: create user + space + access code → user can login
 
+### Deployment & Observability
+
+- [ ] AWS CloudWatch logging: configure Vercel log drain → CloudWatch Logs (structured JSON already output by `logger.ts`). Alternatively, add `@aws-sdk/client-cloudwatch-logs` for direct transport if Vercel log drain is insufficient.
+- [ ] Verify `trace_id` appears in CloudWatch logs and is searchable
+- [ ] Verify `llm_cost_logs` entries appear in CloudWatch (from AI steps)
+- [ ] Document Vercel + AWS setup in README (env vars, log drain config, CloudWatch log group)
+
 ### Documentation Finalization
 
 - [ ] `ARCHITECTURE.md` reflects final state of the system (all patterns, all modules, all conventions)
 - [ ] `CONTEXT.md` has final summary section: "App is feature-complete for Phase 1"
-- [ ] `README.md` created: project overview, setup instructions, env vars, how to run locally, how to deploy
+- [ ] `README.md` created: project overview, setup instructions, env vars, how to run locally, how to deploy, CloudWatch setup
 - [ ] All `.env.example` vars documented and current
 
 ## Key Files (expected)
