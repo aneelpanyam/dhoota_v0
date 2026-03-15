@@ -46,9 +46,10 @@ export async function buildUserContext(
     }
   }
 
-  const defaultOptions = availableOptions.filter((opt) =>
-    defaultIds.includes(opt.id)
-  );
+  // In public mode, show all enabled options in the bottom strip (including info cards, announcements)
+  const defaultOptions = isPublicMode() && session.userType === "citizen"
+    ? availableOptions
+    : availableOptions.filter((opt) => defaultIds.includes(opt.id));
 
   const recentMessages = session.userType === "citizen"
     ? []

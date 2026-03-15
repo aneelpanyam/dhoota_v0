@@ -25,6 +25,8 @@ interface MobileBottomNavProps {
   representativeAvatarUrl?: string | null;
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
+  /** When provided, public.info_cards opens the side panel instead of running the option */
+  onOpenInfoPanel?: () => void;
 }
 
 export function MobileBottomNav({
@@ -34,6 +36,7 @@ export function MobileBottomNav({
   representativeAvatarUrl,
   onOptionSelect,
   onExplore,
+  onOpenInfoPanel,
 }: MobileBottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [pressedActionId, setPressedActionId] = useState<string | null>(null);
@@ -157,7 +160,13 @@ export function MobileBottomNav({
           <NavButton
             key={optionId}
             actionId={optionId}
-            onSelect={() => onOptionSelect(optionId)}
+            onSelect={() => {
+              if (isPublicMode && optionId === "public.info_cards" && onOpenInfoPanel) {
+                onOpenInfoPanel();
+              } else {
+                onOptionSelect(optionId);
+              }
+            }}
             icon={Icon}
             label={label}
             ariaLabel={label}
@@ -204,7 +213,11 @@ export function MobileBottomNav({
                           key={opt.optionId}
                           onClick={() => {
                             setMoreOpen(false);
-                            onOptionSelect(opt.optionId, opt.params);
+                            if (isPublicMode && opt.optionId === "public.info_cards" && onOpenInfoPanel) {
+                              onOpenInfoPanel();
+                            } else {
+                              onOptionSelect(opt.optionId, opt.params);
+                            }
                           }}
                           className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted transition"
                         >

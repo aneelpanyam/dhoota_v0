@@ -19,6 +19,8 @@ interface OptionsStripProps {
   onOptionSelect: (optionId: string, params?: Record<string, unknown>) => void;
   onExplore: () => void;
   contextFilters?: { id: string; name: string }[];
+  /** When provided, public.info_cards opens the side panel instead of running the option */
+  onOpenInfoPanel?: () => void;
 }
 
 export function OptionsStrip({
@@ -29,6 +31,7 @@ export function OptionsStrip({
   onOptionSelect,
   onExplore,
   contextFilters = [],
+  onOpenInfoPanel,
 }: OptionsStripProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -93,7 +96,13 @@ export function OptionsStrip({
         return (
           <button
             key={optionId}
-            onClick={() => onOptionSelect(optionId)}
+            onClick={() => {
+              if (isPublicMode && optionId === "public.info_cards" && onOpenInfoPanel) {
+                onOpenInfoPanel();
+              } else {
+                onOptionSelect(optionId);
+              }
+            }}
             className="flex items-center gap-2 shrink-0 p-2 md:px-3 md:py-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
             title={label}
             aria-label={label}
@@ -143,7 +152,7 @@ export function OptionsStrip({
                   </button>
                 </div>
                 <div className="py-1 bg-background">
-                  {moreOptions.map((opt) => {
+                    {moreOptions.map((opt) => {
                     const Icon = getOptionIcon(opt.icon);
                     const showAvatar = isPublicMode && opt.optionId === "public.about" && representativeAvatarUrl;
                     return (
@@ -151,7 +160,11 @@ export function OptionsStrip({
                         key={opt.optionId}
                         onClick={() => {
                           setMoreOpen(false);
-                          onOptionSelect(opt.optionId, opt.params);
+                          if (isPublicMode && opt.optionId === "public.info_cards" && onOpenInfoPanel) {
+                            onOpenInfoPanel();
+                          } else {
+                            onOptionSelect(opt.optionId, opt.params);
+                          }
                         }}
                         className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted transition"
                       >

@@ -172,7 +172,7 @@ export function ChatContainer() {
           {isPublic && (
             <button
               onClick={() => setSidePanelOpen((o) => !o)}
-              className="ml-3 p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition lg:hidden"
+              className="ml-3 p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition hidden lg:flex"
               aria-label="Toggle info panel"
             >
               <Info className="h-4 w-4" />
@@ -347,6 +347,7 @@ export function ChatContainer() {
             });
           }}
           featureFlags={sessionContext?.featureFlags ?? []}
+          onOpenInfoPanel={isPublic ? () => setSidePanelOpen(true) : undefined}
         />
       </div>
 
@@ -365,6 +366,7 @@ export function ChatContainer() {
             });
           }}
           onExplore={() => setInputExpanded(true)}
+          onOpenInfoPanel={isPublic ? () => setSidePanelOpen(true) : undefined}
         />
       )}
 
