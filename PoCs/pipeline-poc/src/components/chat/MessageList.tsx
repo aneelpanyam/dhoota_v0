@@ -59,6 +59,7 @@ export function MessageList({
   onPinToContext,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevMessageCount = useRef(0);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [showHidden, setShowHidden] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
@@ -148,7 +149,12 @@ export function MessageList({
   }, [persistHidden]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const count = messages.length;
+    // Only scroll when new messages are added (not on initial load: 0 -> N)
+    if (prevMessageCount.current > 0 && count > prevMessageCount.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMessageCount.current = count;
   }, [messages]);
 
   const hiddenCount = messages.filter((m) => hiddenIds.has(m.id)).length;

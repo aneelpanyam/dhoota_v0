@@ -9,6 +9,9 @@ const PUBLIC_ALLOWED_ROUTES = [
   "/api/session",
   "/api/context-filters",
   "/api/media/serve",
+  "/icon.png",
+  "/apple-icon.png",
+  "/favicon.ico",
 ];
 
 export async function updateSession(request: NextRequest) {

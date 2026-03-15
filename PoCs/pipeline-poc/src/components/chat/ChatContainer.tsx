@@ -157,10 +157,18 @@ export function ChatContainer() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header
-          className={`h-14 border-b flex items-center shrink-0 ${
+          className={`h-14 border-b flex items-center shrink-0 gap-1 ${
             isPublic ? "px-6" : "px-6 pl-14 md:pl-6"
           }`}
         >
+          <div className="w-10 h-10 shrink-0 rounded overflow-hidden flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icon.png"
+              alt=""
+              className="w-10 h-10 object-cover"
+            />
+          </div>
           <h1 className="text-lg font-semibold">
             {isPublic
               ? (sessionContext?.publicSiteConfig?.siteTitle ?? sessionContext?.user?.displayName ?? "Dhoota")
