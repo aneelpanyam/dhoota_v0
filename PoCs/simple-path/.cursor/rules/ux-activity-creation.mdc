@@ -1,0 +1,15 @@
+---
+description: Activity creation UX — intuitive flow for non-app-literate users
+globs: "**/*.tsx","**/components/**/*"
+alwaysApply: false
+---
+
+# Activity Creation UX
+
+Target users may have basic app literacy. Make the flow very intuitive:
+
+- **Contextual guidance:** Inline hints ("Describe what you did in your own words"), examples, progressive disclosure
+- **AI-suggested next steps:** Guide user through the flow
+- **Plain language:** No jargon
+- **Consider:** Wizard-style or conversational flow to reduce cognitive load
+- **One primary action per screen** where possible

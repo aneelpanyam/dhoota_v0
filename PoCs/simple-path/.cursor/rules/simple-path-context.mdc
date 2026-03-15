@@ -1,0 +1,23 @@
+---
+description: Simple Path app — architecture, data model, and key decisions. Read PLAN.md for full details.
+globs: "**/*"
+alwaysApply: true
+---
+
+# Simple Path App — Context
+
+When working in PoCs/simple-path, use PLAN.md as the source of truth. Key points:
+
+**Scope:** Activity Tracker only. No pipeline-poc dependency. Suggestion Box and Public Site are future phases.
+
+**Model:** User → Space (1:1) → Categories (workspaces). No tenant. Category = collaboration unit. No tasks — planning via space/category notes and Q&A. Activity always belongs to category.
+
+**Tech:** Next.js 15, Supabase, S3, CloudFront, Vercel. Auth: permanent access code + OTP (future TOTP).
+
+**Observability:** trace_id per request; CloudWatch logs; llm_cost_logs for every LLM call. Return trace_id on errors.
+
+**Validation:** Zod frontend + server. Never trust client. RLS on DB.
+
+**AI:** Core module. Activity Summary, Workspace Summary, Insights. Admin-configurable providers (OpenAI, Gemini, Perplexity). All calls logged.
+
+**UX:** Mobile-first (including admin). Intuitive activity creation for non-app-literate users — contextual guidance, inline hints, progressive disclosure. Social media feed, infinite scroll. Workspace dashboard with AI snapshot.
