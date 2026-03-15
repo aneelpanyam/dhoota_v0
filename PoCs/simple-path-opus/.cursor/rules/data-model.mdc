@@ -1,0 +1,15 @@
+---
+description: Simple Path data model — entities and relationships
+globs: "**/*.ts","**/*.tsx","**/migrations/*.sql"
+alwaysApply: false
+---
+
+# Simple Path Data Model
+
+**Core tables:** system, users, spaces, space_notes, space_questions, space_answers, access_codes, categories, category_collaborators, category_questions, category_answers, questions, category_catalog, activities, activity_answers, activity_links, activity_social_posts, insights, ai_provider_config, knowledge_base, space_features, llm_cost_logs, session_traces.
+
+**Activity:** raw_description, attachments, title (AI), well_formed_description (AI), status (draft/active/completed), participants (JSONB), tags (text[]), notes, category_id, created_by. Answers in activity_answers (1:many). Links in activity_links (self-referential many:many). Social posts in activity_social_posts (1:many).
+
+**Access codes:** Permanent (not one-time). Maps to user. MFA factor 1.
+
+**Scope:** space_id for billing; category_id for activities. No task_id.

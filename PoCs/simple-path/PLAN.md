@@ -1,6 +1,8 @@
 # Simple Path App - Implementation Plan
 
 > **Read this plan when working on PoCs/simple-path.** It is the source of truth for architecture, data model, and flows.
+>
+> **For story-by-story execution:** See [AGILE_PLAN.md](AGILE_PLAN.md) — 28 stories across 6 epics with acceptance criteria and sprint order.
 
 ## Scope
 
@@ -61,7 +63,7 @@ Build the **basic Activity Tracker** entirely within PoCs/simple-path. No depend
 
 ## Data Model (Supabase)
 
-**Core entities:** `system`, `users`, `spaces`, `space_notes`, `space_questions`, `space_answers`, `access_codes` (permanent, not one-time), `categories`, `category_collaborators`, `category_questions`, `category_answers`, `questions` (for activities), `category_catalog`, `activities`, `activity_answers`, `insights`, `ai_provider_config`, `knowledge_base`, `space_features`, `llm_cost_logs`.
+**Core entities:** `system`, `users`, `spaces`, `space_notes`, `space_questions`, `space_answers`, `access_codes` (permanent, not one-time), `categories`, `category_collaborators`, `category_questions`, `category_answers`, `questions` (for activities), `category_catalog`, `activities`, `activity_answers`, `insights`, `ai_provider_config`, `knowledge_base`, `space_features`, `llm_cost_logs`, `session_traces` (drillable session context for support).
 
 **Activity:** `raw_description`, `attachments`, `title` (AI-generated), `well_formed_description` (AI-generated), `category_id`, `created_by`. Answers in `activity_answers` (1:many).
 
@@ -74,6 +76,7 @@ Build the **basic Activity Tracker** entirely within PoCs/simple-path. No depend
 - **Tracing:** `trace_id` per request; propagate; return on errors.
 - **Logging:** Structured JSON to CloudWatch; log auth, activities, AI calls, validation failures.
 - **LLM cost:** `llm_cost_logs` — provider, model, operation, input/output tokens, latency, space_id, trace_id.
+- **Drillable session tracing:** `session_traces` — capture session_id, user actions (action_type, action_params), results (success/error, payload). Support can look up by trace_id or session_id and reconstruct full context (user journey, actions, outcomes) without asking the user.
 
 ---
 
@@ -106,6 +109,7 @@ Admin-configurable providers: OpenAI, Gemini, Perplexity. All calls logged to `l
 - **Activity feed:** Social media style; infinite scroll (cursor-based).
 - **Workspace dashboard:** Quick snapshot per category — stats, recent activities, AI insights/guidance/assessment.
 - **Activity creation:** Very intuitive for non-app-literate users. Contextual guidance, inline hints, examples, progressive disclosure, AI-suggested next steps. Plain language; consider wizard or conversational flow.
+- **Status updates:** Non-intrusive, user-friendly. Subtle toasts or inline status (e.g. "Saving…", "Generating title…"); avoid blocking modals. Bottom/corner placement; auto-dismiss on success; persist on error with trace_id for support.
 - **Fonts:** Inter or Nunito Sans. Colors: soft palette, high contrast for actions.
 
 ---

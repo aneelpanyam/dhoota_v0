@@ -1,0 +1,23 @@
+---
+description: Simple Path app — architecture, data model, and key decisions. Read PLAN.md for full details.
+globs: "**/*"
+alwaysApply: true
+---
+
+# Simple Path App — Context
+
+When working in PoCs/simple-path-opus, use PLAN.md as the source of truth. Follow the Progressive Build Protocol in steps/PROCESS.md. Key points:
+
+**Scope:** Activity Tracker only. No pipeline-poc dependency. Suggestion Box and Public Site are future phases.
+
+**Model:** User → Space (1:1) → Categories (workspaces). No tenant. Category = collaboration unit. No tasks — planning via space/category notes and Q&A. Activity always belongs to category. Activities support participants, tags, social media posts, and linking to other activities.
+
+**Tech:** Next.js 15, Supabase, S3, CloudFront, Vercel. Auth: permanent access code + OTP (future TOTP).
+
+**Observability:** trace_id per request; CloudWatch logs; llm_cost_logs for every LLM call; session_traces for drillable session context (actions + results). Return trace_id on errors. Support can look up by trace_id or session_id to build full context.
+
+**Validation:** Zod frontend + server. Never trust client. RLS on DB.
+
+**AI:** Core module. Activity Summary, Workspace Summary, Insights. Admin-configurable providers (OpenAI, Gemini, Perplexity). All calls logged.
+
+**UX (Slack + Notion + ChatGPT):** Mobile-first (including admin). **Slack:** Categories as channels; drill-down navigation (channel list → activity list → activity page). Minimal bottom bar for Calendar, Insights, Profile. **Notion:** Activity detail as rich, expandable pages; question answers as collapsible accordions/toggles; inline editing; notes/comments at bottom. **ChatGPT:** Activity creation as conversational flow ("What did you do?"); AI responds with title, guidance, next steps. Progressive disclosure, contextual hints, plain language for non-app-literate users. Admin follows same drill-down pattern. Non-intrusive toasts; trace_id on errors.

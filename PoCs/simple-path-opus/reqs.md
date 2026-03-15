@@ -1,0 +1,25 @@
+# **Functionality**
+
+- Have Event Categories
+- Show them as the channels
+- User enters and views their activities
+    - Activity has a name, title, description, images, participants
+- For each category system has configurable questions with different question types
+    - Support Files, Tables, Date, Email, Phone Number, Rich Text
+- User adds activities and they see the questions which they answer
+    - They can manage the activities
+        - Tags
+        - Notes
+        - Social Media Posts
+- Can mark tasks as complete
+- They can view the tasks by calendar
+- They have an Insights Page where they can choose activities and gather insights. The insights they want to keep are stored to the DB.
+    - They can add notes to the insights
+- Admin can manage tenants and users
+- Tenant can manage the categories and questions they want for each category
+- Admins can manage the Categories and Questions per Tenant, features per tenant
+- Admin can set knowledge base per Tenant, per category, which will be used during the insights
+- When an activity is added the system shows next steps guidance to the user
+- System allows linking of activities
+- Admin or Tenant User can manage the public site module
+    - App is a collection of modules - Activity Tracker, Public Site, Suggestion Box

@@ -1,0 +1,37 @@
+---
+description: UX mental model — Slack + Notion + ChatGPT interaction patterns
+globs: "**/*.tsx","**/components/**/*"
+alwaysApply: false
+---
+
+# UX Mental Model: Slack + Notion + ChatGPT
+
+The app combines three familiar interaction patterns:
+
+## Slack: Channel-Based Navigation
+- **Home screen** = channel list (categories). Tap to drill in.
+- **Inside a channel** = activity list (like messages). Scroll, scan, tap.
+- **Drill-down hierarchy:** Channels → Activity list → Activity page. Back arrow at each level.
+- Minimal bottom bar for global views (Calendar, Insights, Profile). Primary flow is drill-down.
+
+## Notion: Rich Activity Pages
+- Each activity opens as a **full Notion-style page** — clean, spacious, content-focused.
+- **Question answers as accordions/toggles** — collapsible sections, scannable, expand on tap.
+- **Inline editing** everywhere — click to edit title, description, notes. No separate "edit mode."
+- **Notes/comments at the bottom** — like Notion page comments. Users add context over time.
+- **Enrichment sections** (tags, participants, links, social posts) as organized sections below content.
+
+## ChatGPT: Conversational AI Interactions
+- **Activity creation** feels like starting a conversation: "What did you do?" as the opening prompt.
+- **AI responds** with generated title, description, next-steps guidance — like a helpful assistant.
+- **Progressive disclosure** — don't show everything at once. Reveal as the user engages.
+
+## Key Principles for Non-App-Literate Users
+- **Contextual guidance:** Inline hints ("Describe what you did in your own words"), examples
+- **Plain language:** No jargon. Warm, encouraging tone.
+- **One primary action per screen section** — reduce cognitive load
+- **Progressive disclosure:** Show description first → questions appear → optional enrichment last
+- **Status updates:** Non-intrusive toasts, not blocking modals. Show trace_id on errors for support.
+
+## Admin Follows the Same Pattern
+Admin uses identical drill-down: admin sections as "channels" → item lists → Notion-style detail pages.

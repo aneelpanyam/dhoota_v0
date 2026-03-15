@@ -14,10 +14,10 @@ When working in PoCs/simple-path, use PLAN.md as the source of truth. Key points
 
 **Tech:** Next.js 15, Supabase, S3, CloudFront, Vercel. Auth: permanent access code + OTP (future TOTP).
 
-**Observability:** trace_id per request; CloudWatch logs; llm_cost_logs for every LLM call. Return trace_id on errors.
+**Observability:** trace_id per request; CloudWatch logs; llm_cost_logs for every LLM call; session_traces for drillable session context (actions + results). Return trace_id on errors. Support can look up by trace_id or session_id to build full context.
 
 **Validation:** Zod frontend + server. Never trust client. RLS on DB.
 
 **AI:** Core module. Activity Summary, Workspace Summary, Insights. Admin-configurable providers (OpenAI, Gemini, Perplexity). All calls logged.
 
-**UX:** Mobile-first (including admin). Intuitive activity creation for non-app-literate users — contextual guidance, inline hints, progressive disclosure. Social media feed, infinite scroll. Workspace dashboard with AI snapshot.
+**UX:** Mobile-first (including admin). Intuitive activity creation for non-app-literate users — contextual guidance, inline hints, progressive disclosure. Social media feed, infinite scroll. Workspace dashboard with AI snapshot. Status updates: non-intrusive toasts/inline; avoid blocking modals; show trace_id on errors for support.

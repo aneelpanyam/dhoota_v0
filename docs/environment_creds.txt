@@ -1,9 +1,0 @@
-SB: Let$@wes0meM@ke1t
-
-solo-aneel
-400464284344
-root - aneel.panyam@gmail.com
-account user - aneel-usr
-console url - https://ap-south-1.console.aws.amazon.com/
-
-IAM User access key - ZwXDzC35kBxK5bvlpgTbia8NsmPWZ3s/vQfTXk/W
